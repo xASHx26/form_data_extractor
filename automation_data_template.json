@@ -1,0 +1,380 @@
+{
+    "form_data": {
+        "form_name": "Sample Registration Form",
+        "form_id": "userForm",
+        "elements": {
+            "text_inputs": [
+                {
+                    "id": "firstName",
+                    "name": "firstName",
+                    "xpath": "//*[@id='firstName']",
+                    "css_selector": "#firstName",
+                    "value": "",
+                    "type": "text"
+                },
+                {
+                    "id": "lastName",
+                    "name": "lastName",
+                    "xpath": "//*[@id='lastName']",
+                    "css_selector": "#lastName",
+                    "value": "",
+                    "type": "text"
+                },
+                {
+                    "id": "email",
+                    "name": "email",
+                    "xpath": "//*[@id='email']",
+                    "css_selector": "#email",
+                    "value": "",
+                    "type": "email"
+                },
+                {
+                    "id": "phone",
+                    "name": "phone",
+                    "xpath": "//*[@id='phone']",
+                    "css_selector": "#phone",
+                    "value": "",
+                    "type": "tel"
+                }
+            ],
+            "password_inputs": [
+                {
+                    "id": "password",
+                    "name": "password",
+                    "xpath": "//*[@id='password']",
+                    "css_selector": "#password",
+                    "value": "",
+                    "type": "password"
+                }
+            ],
+            "date_inputs": [
+                {
+                    "id": "dateOfBirth",
+                    "name": "dateOfBirth",
+                    "xpath": "//*[@id='dateOfBirth']",
+                    "css_selector": "#dateOfBirth",
+                    "value": "",
+                    "type": "date",
+                    "format": "YYYY-MM-DD"
+                }
+            ],
+            "number_inputs": [
+                {
+                    "id": "age",
+                    "name": "age",
+                    "xpath": "//*[@id='age']",
+                    "css_selector": "#age",
+                    "value": "",
+                    "type": "number",
+                    "min": 0,
+                    "max": 150
+                }
+            ],
+            "textareas": [
+                {
+                    "id": "address",
+                    "name": "address",
+                    "xpath": "//*[@id='address']",
+                    "css_selector": "#address",
+                    "value": "",
+                    "type": "textarea"
+                },
+                {
+                    "id": "comments",
+                    "name": "comments",
+                    "xpath": "//*[@id='comments']",
+                    "css_selector": "#comments",
+                    "value": "",
+                    "type": "textarea"
+                }
+            ],
+            "dropdowns": [
+                {
+                    "id": "country",
+                    "name": "country",
+                    "xpath": "//*[@id='country']",
+                    "css_selector": "#country",
+                    "selected_value": "",
+                    "selected_index": null,
+                    "selected_text": "",
+                    "type": "select",
+                    "options": [
+                        {
+                            "index": 0,
+                            "value": "",
+                            "text": "Select country..."
+                        },
+                        {
+                            "index": 1,
+                            "value": "us",
+                            "text": "United States"
+                        },
+                        {
+                            "index": 2,
+                            "value": "uk",
+                            "text": "United Kingdom"
+                        },
+                        {
+                            "index": 3,
+                            "value": "ca",
+                            "text": "Canada"
+                        }
+                    ]
+                },
+                {
+                    "id": "state",
+                    "name": "state",
+                    "xpath": "//*[@id='state']",
+                    "css_selector": "#state",
+                    "selected_value": "",
+                    "selected_index": null,
+                    "selected_text": "",
+                    "type": "select",
+                    "depends_on": "country",
+                    "options": []
+                }
+            ],
+            "radio_groups": [
+                {
+                    "group_name": "gender",
+                    "selected_value": "",
+                    "type": "radio",
+                    "options": [
+                        {
+                            "id": "gender-male",
+                            "value": "male",
+                            "label": "Male",
+                            "xpath": "//*[@id='gender-male']",
+                            "css_selector": "#gender-male",
+                            "checked": false
+                        },
+                        {
+                            "id": "gender-female",
+                            "value": "female",
+                            "label": "Female",
+                            "xpath": "//*[@id='gender-female']",
+                            "css_selector": "#gender-female",
+                            "checked": false
+                        },
+                        {
+                            "id": "gender-other",
+                            "value": "other",
+                            "label": "Other",
+                            "xpath": "//*[@id='gender-other']",
+                            "css_selector": "#gender-other",
+                            "checked": false
+                        }
+                    ]
+                },
+                {
+                    "group_name": "accountType",
+                    "selected_value": "",
+                    "type": "radio",
+                    "options": [
+                        {
+                            "id": "account-personal",
+                            "value": "personal",
+                            "label": "Personal",
+                            "xpath": "//*[@id='account-personal']",
+                            "css_selector": "#account-personal",
+                            "checked": false
+                        },
+                        {
+                            "id": "account-business",
+                            "value": "business",
+                            "label": "Business",
+                            "xpath": "//*[@id='account-business']",
+                            "css_selector": "#account-business",
+                            "checked": false
+                        }
+                    ]
+                }
+            ],
+            "checkbox_groups": [
+                {
+                    "group_name": "interests",
+                    "selected_values": [],
+                    "type": "checkbox",
+                    "options": [
+                        {
+                            "id": "interest-sports",
+                            "value": "sports",
+                            "label": "Sports",
+                            "xpath": "//*[@id='interest-sports']",
+                            "css_selector": "#interest-sports",
+                            "checked": false
+                        },
+                        {
+                            "id": "interest-music",
+                            "value": "music",
+                            "label": "Music",
+                            "xpath": "//*[@id='interest-music']",
+                            "css_selector": "#interest-music",
+                            "checked": false
+                        },
+                        {
+                            "id": "interest-reading",
+                            "value": "reading",
+                            "label": "Reading",
+                            "xpath": "//*[@id='interest-reading']",
+                            "css_selector": "#interest-reading",
+                            "checked": false
+                        }
+                    ]
+                }
+            ],
+            "single_checkboxes": [
+                {
+                    "id": "terms",
+                    "name": "terms",
+                    "xpath": "//*[@id='terms']",
+                    "css_selector": "#terms",
+                    "value": "agreed",
+                    "label": "I agree to terms and conditions",
+                    "checked": false,
+                    "type": "checkbox",
+                    "required": true
+                },
+                {
+                    "id": "newsletter",
+                    "name": "newsletter",
+                    "xpath": "//*[@id='newsletter']",
+                    "css_selector": "#newsletter",
+                    "value": "subscribed",
+                    "label": "Subscribe to newsletter",
+                    "checked": false,
+                    "type": "checkbox",
+                    "required": false
+                }
+            ],
+            "file_uploads": [
+                {
+                    "id": "profilePicture",
+                    "name": "profilePicture",
+                    "xpath": "//*[@id='profilePicture']",
+                    "css_selector": "#profilePicture",
+                    "file_path": "",
+                    "type": "file",
+                    "accepted_types": [
+                        "image/png",
+                        "image/jpeg",
+                        "image/jpg"
+                    ]
+                },
+                {
+                    "id": "resume",
+                    "name": "resume",
+                    "xpath": "//*[@id='resume']",
+                    "css_selector": "#resume",
+                    "file_path": "",
+                    "type": "file",
+                    "accepted_types": [
+                        "application/pdf",
+                        "application/msword"
+                    ]
+                }
+            ],
+            "react_select_dropdowns": [
+                {
+                    "id": "react-select-3-input",
+                    "container_selector": "#stateCity-wrapper > div:nth-child(1)",
+                    "selected_value": "",
+                    "selected_text": "",
+                    "type": "react-select",
+                    "react_selector": "getByTestId('state-select')",
+                    "options": [
+                        {
+                            "index": 0,
+                            "value": "NCR",
+                            "label": "NCR"
+                        },
+                        {
+                            "index": 1,
+                            "value": "Uttar Pradesh",
+                            "label": "Uttar Pradesh"
+                        },
+                        {
+                            "index": 2,
+                            "value": "Haryana",
+                            "label": "Haryana"
+                        }
+                    ]
+                },
+                {
+                    "id": "react-select-4-input",
+                    "container_selector": "#stateCity-wrapper > div:nth-child(2)",
+                    "selected_value": "",
+                    "selected_text": "",
+                    "type": "react-select",
+                    "depends_on": "react-select-3-input",
+                    "react_selector": "getByTestId('city-select')",
+                    "options": []
+                }
+            ],
+            "buttons": [
+                {
+                    "id": "submitBtn",
+                    "name": "submit",
+                    "xpath": "//*[@id='submitBtn']",
+                    "css_selector": "#submitBtn",
+                    "type": "submit",
+                    "text": "Submit",
+                    "action": "click"
+                },
+                {
+                    "id": "cancelBtn",
+                    "name": "cancel",
+                    "xpath": "//*[@id='cancelBtn']",
+                    "css_selector": "#cancelBtn",
+                    "type": "button",
+                    "text": "Cancel",
+                    "action": "click"
+                }
+            ]
+        }
+    },
+    "test_scenarios": [
+        {
+            "scenario_name": "valid_registration",
+            "description": "Test valid user registration with all required fields",
+            "data_overrides": {
+                "text_inputs": {
+                    "firstName": "John",
+                    "lastName": "Doe",
+                    "email": "john.doe@example.com",
+                    "phone": "1234567890"
+                },
+                "dropdowns": {
+                    "country": {
+                        "value": "us",
+                        "text": "United States"
+                    }
+                },
+                "radio_groups": {
+                    "gender": "male",
+                    "accountType": "personal"
+                },
+                "single_checkboxes": {
+                    "terms": true,
+                    "newsletter": false
+                }
+            }
+        },
+        {
+            "scenario_name": "invalid_email",
+            "description": "Test with invalid email format",
+            "data_overrides": {
+                "text_inputs": {
+                    "email": "invalid-email"
+                }
+            },
+            "expected_result": "validation_error"
+        },
+        {
+            "scenario_name": "missing_required_fields",
+            "description": "Test with missing required fields",
+            "data_overrides": {},
+            "expected_result": "validation_error"
+        }
+    ]
+}

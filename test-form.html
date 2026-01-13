@@ -1,0 +1,334 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sample Form - Test Page</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            padding: 40px 20px;
+            min-height: 100vh;
+        }
+
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 12px;
+            padding: 40px;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.2);
+        }
+
+        h1 {
+            color: #333;
+            margin-bottom: 10px;
+        }
+
+        .subtitle {
+            color: #6c757d;
+            margin-bottom: 30px;
+            font-size: 14px;
+        }
+
+        form {
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+
+        .form-group {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        label {
+            font-weight: 600;
+            color: #333;
+            font-size: 14px;
+        }
+
+        input,
+        select,
+        textarea {
+            padding: 12px;
+            border: 1px solid #ddd;
+            border-radius: 6px;
+            font-size: 14px;
+            font-family: inherit;
+        }
+
+        input:focus,
+        select:focus,
+        textarea:focus {
+            outline: none;
+            border-color: #667eea;
+            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+        }
+
+        .radio-group,
+        .checkbox-group {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .radio-item,
+        .checkbox-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        button {
+            padding: 12px 24px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            border-radius: 6px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: transform 0.2s;
+        }
+
+        button:hover {
+            transform: translateY(-2px);
+        }
+
+        .conditional-section {
+            display: none;
+            padding: 20px;
+            background: #f8f9fa;
+            border-radius: 6px;
+            border-left: 4px solid #667eea;
+        }
+
+        .conditional-section.show {
+            display: block;
+        }
+
+        fieldset {
+            border: 1px solid #ddd;
+            border-radius: 6px;
+            padding: 20px;
+            margin-top: 10px;
+        }
+
+        legend {
+            font-weight: 600;
+            color: #667eea;
+            padding: 0 10px;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <h1>🔍 Sample Registration Form</h1>
+        <p class="subtitle">Test page for Form Extractor extension</p>
+
+        <form id="registrationForm" name="registrationForm" action="/submit" method="POST">
+
+            <!-- Basic Information -->
+            <fieldset>
+                <legend>Basic Information</legend>
+
+                <div class="form-group">
+                    <label for="fullName">Full Name *</label>
+                    <input type="text" id="fullName" name="fullName" placeholder="Enter your full name" required>
+                </div>
+
+                <div class="form-group">
+                    <label for="email">Email Address *</label>
+                    <input type="email" id="email" name="email" placeholder="you@example.com" required>
+                </div>
+
+                <div class="form-group">
+                    <label for="phone">Phone Number</label>
+                    <input type="tel" id="phone" name="phone" placeholder="+1 (555) 123-4567">
+                </div>
+
+                <div class="form-group">
+                    <label for="dob">Date of Birth</label>
+                    <input type="date" id="dob" name="dateOfBirth">
+                </div>
+            </fieldset>
+
+            <!-- Account Type -->
+            <fieldset>
+                <legend>Account Type</legend>
+
+                <div class="form-group">
+                    <label>Select Account Type *</label>
+                    <div class="radio-group">
+                        <div class="radio-item">
+                            <input type="radio" id="personal" name="accountType" value="personal" checked>
+                            <label for="personal">Personal</label>
+                        </div>
+                        <div class="radio-item">
+                            <input type="radio" id="business" name="accountType" value="business">
+                            <label for="business">Business</label>
+                        </div>
+                        <div class="radio-item">
+                            <input type="radio" id="enterprise" name="accountType" value="enterprise">
+                            <label for="enterprise">Enterprise</label>
+                        </div>
+                    </div>
+                </div>
+            </fieldset>
+
+            <!-- Business Information (Conditional) -->
+            <div id="businessSection" class="conditional-section" data-show-when="business,enterprise">
+                <fieldset>
+                    <legend>Business Information</legend>
+
+                    <div class="form-group">
+                        <label for="companyName">Company Name</label>
+                        <input type="text" id="companyName" name="companyName" placeholder="Enter company name">
+                    </div>
+
+                    <div class="form-group">
+                        <label for="companySize">Company Size</label>
+                        <select id="companySize" name="companySize">
+                            <option value="">Select size...</option>
+                            <option value="1-10">1-10 employees</option>
+                            <option value="11-50">11-50 employees</option>
+                            <option value="51-200">51-200 employees</option>
+                            <option value="201-500">201-500 employees</option>
+                            <option value="501+">501+ employees</option>
+                        </select>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="industry">Industry</label>
+                        <select id="industry" name="industry">
+                            <option value="">Select industry...</option>
+                            <option value="tech">Technology</option>
+                            <option value="finance">Finance</option>
+                            <option value="healthcare">Healthcare</option>
+                            <option value="education">Education</option>
+                            <option value="retail">Retail</option>
+                            <option value="other">Other</option>
+                        </select>
+                    </div>
+                </fieldset>
+            </div>
+
+            <!-- Preferences -->
+            <fieldset>
+                <legend>Preferences</legend>
+
+                <div class="form-group">
+                    <label for="country">Country *</label>
+                    <select id="country" name="country" required>
+                        <option value="">Select country...</option>
+                        <option value="us">United States</option>
+                        <option value="uk">United Kingdom</option>
+                        <option value="ca">Canada</option>
+                        <option value="au">Australia</option>
+                        <option value="de">Germany</option>
+                        <option value="fr">France</option>
+                        <option value="jp">Japan</option>
+                        <option value="other">Other</option>
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label for="timezone">Timezone</label>
+                    <select id="timezone" name="timezone" disabled>
+                        <option value="">Select timezone...</option>
+                        <option value="pst">Pacific (PST)</option>
+                        <option value="mst">Mountain (MST)</option>
+                        <option value="cst">Central (CST)</option>
+                        <option value="est">Eastern (EST)</option>
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label>Interests</label>
+                    <div class="checkbox-group">
+                        <div class="checkbox-item">
+                            <input type="checkbox" id="newsletter" name="interests" value="newsletter">
+                            <label for="newsletter">Receive newsletter</label>
+                        </div>
+                        <div class="checkbox-item">
+                            <input type="checkbox" id="updates" name="interests" value="updates" checked>
+                            <label for="updates">Product updates</label>
+                        </div>
+                        <div class="checkbox-item">
+                            <input type="checkbox" id="marketing" name="interests" value="marketing">
+                            <label for="marketing">Marketing emails</label>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label for="comments">Additional Comments</label>
+                    <textarea id="comments" name="comments" rows="4"
+                        placeholder="Tell us more about yourself..."></textarea>
+                </div>
+            </fieldset>
+
+            <!-- Agreement -->
+            <div class="form-group">
+                <div class="checkbox-item">
+                    <input type="checkbox" id="terms" name="terms" required>
+                    <label for="terms">I agree to the Terms and Conditions *</label>
+                </div>
+            </div>
+
+            <!-- Submit Buttons -->
+            <div style="display: flex; gap: 10px;">
+                <button type="submit">Submit Registration</button>
+                <button type="button" onclick="document.getElementById('registrationForm').reset()">Reset Form</button>
+            </div>
+        </form>
+    </div>
+
+    <script>
+        // Enable/disable timezone based on country selection
+        const countrySelect = document.getElementById('country');
+        const timezoneSelect = document.getElementById('timezone');
+
+        countrySelect.addEventListener('change', function () {
+            if (this.value) {
+                timezoneSelect.disabled = false;
+            } else {
+                timezoneSelect.disabled = true;
+                timezoneSelect.value = '';
+            }
+        });
+
+        // Show/hide business section based on account type
+        const accountTypeRadios = document.querySelectorAll('input[name="accountType"]');
+        const businessSection = document.getElementById('businessSection');
+
+        accountTypeRadios.forEach(radio => {
+            radio.addEventListener('change', function () {
+                if (this.value === 'business' || this.value === 'enterprise') {
+                    businessSection.classList.add('show');
+                } else {
+                    businessSection.classList.remove('show');
+                }
+            });
+        });
+
+        // Prevent actual form submission
+        document.getElementById('registrationForm').addEventListener('submit', function (e) {
+            e.preventDefault();
+            alert('Form submitted! (This is just a test page)');
+        });
+    </script>
+</body>
+
+</html>

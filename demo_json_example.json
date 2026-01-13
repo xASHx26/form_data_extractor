@@ -1,0 +1,102 @@
+{
+    "test_cases": [
+        {
+            "name": "valid_submission",
+            "description": "Test with valid data for all required fields",
+            "data": {
+                "first_name": "",
+                "last_name": "",
+                "email": "",
+                "gender": "",
+                "mobile_number": "",
+                "date_of_birth": "",
+                "subjects": "",
+                "hobbies": "",
+                "picture": "",
+                "current_address": "",
+                "state_city_wrapper_div_1": "",
+                "state_city_wrapper_div_2": ""
+            },
+            "expected": "success"
+        },
+        {
+            "name": "missing_required_fields",
+            "description": "Test with missing required fields",
+            "data": {
+                "first_name": "",
+                "last_name": "",
+                "email": "",
+                "gender": "",
+                "mobile_number": "",
+                "date_of_birth": "",
+                "subjects": "",
+                "hobbies": "",
+                "picture": "",
+                "current_address": "",
+                "state_city_wrapper_div_1": "",
+                "state_city_wrapper_div_2": ""
+            },
+            "expected": "validation_error"
+        },
+        {
+            "name": "invalid_data_format",
+            "description": "Test with invalid data formats",
+            "data": {
+                "first_name": "",
+                "last_name": "",
+                "email": "",
+                "gender": "",
+                "mobile_number": "",
+                "date_of_birth": "",
+                "subjects": "",
+                "hobbies": "",
+                "picture": "",
+                "current_address": "",
+                "state_city_wrapper_div_1": "",
+                "state_city_wrapper_div_2": ""
+            },
+            "expected": "validation_error"
+        }
+    ],
+    "selectors_reference": {
+        "first_name": {
+            "id": "firstName",
+            "name": "",
+            "xpath": "//*[@id=\"firstName\"]",
+            "css_selector": "#firstName",
+            "type": "text",
+            "label": ""
+        },
+        "last_name": {
+            "id": "lastName",
+            "name": "",
+            "xpath": "//*[@id=\"lastName\"]",
+            "css_selector": "#lastName",
+            "type": "text",
+            "label": ""
+        },
+        "email": {
+            "id": "userEmail",
+            "name": "",
+            "xpath": "//*[@id=\"userEmail\"]",
+            "css_selector": "#userEmail",
+            "type": "text",
+            "label": ""
+        },
+        "gender": {
+            "id": "gender-radio-1",
+            "name": "gender",
+            "xpath": "//*[@id=\"gender-radio-1\"]",
+            "css_selector": "#gender-radio-1",
+            "type": "radio",
+            "label": "Male"
+        }
+    },
+    "form_info": {
+        "form_name": "userForm",
+        "form_id": "userForm",
+        "form_action": "https://demoqa.com/automation-practice-form",
+        "form_method": "get",
+        "total_elements": 17
+    }
+}

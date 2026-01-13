@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Form Extractor</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+
+<body>
+  <div class="container">
+    <header>
+      <h1>🔍 Form Extractor</h1>
+      <p class="subtitle">Selenium Automation Helper</p>
+    </header>
+
+    <div class="actions">
+      <button id="extractBtn" class="btn btn-primary">
+        <span class="icon">⚡</span> Extract Forms
+      </button>
+      <button id="exportBtn" class="btn btn-secondary" disabled>
+        <span class="icon">📄</span> Export JSON
+      </button>
+      <button id="exportCsvBtn" class="btn btn-secondary" disabled>
+        <span class="icon">📊</span> Export CSV
+      </button>
+      <button id="exportDemoBtn" class="btn btn-demo" disabled>
+        <span class="icon">🤖</span> Get Demo JSON
+      </button>
+    </div>
+
+    <div id="cacheInfo" class="cache-info hidden">
+      <span class="cache-icon">💾</span>
+      <span id="cacheText">Using cached data</span>
+      <button id="refreshBtn" class="btn-refresh">🔄 Refresh</button>
+    </div>
+
+    <div id="statusBar" class="status-bar hidden">
+      <span id="statusText"></span>
+    </div>
+
+    <div class="naming-section">
+      <label for="customName">Export Name:</label>
+      <input type="text" id="customName" placeholder="Enter custom name (optional)">
+      <button id="saveNameBtn" class="btn-save">💾 Save</button>
+    </div>
+
+    <div class="tabs">
+      <button class="tab-btn active" data-tab="overview">Overview</button>
+      <button class="tab-btn" data-tab="elements">Elements</button>
+      <button class="tab-btn" data-tab="dependencies">Dependencies</button>
+    </div>
+
+    <div class="tab-content">
+      <!-- Overview Tab -->
+      <div id="overview" class="tab-panel active">
+        <div id="summaryStats" class="stats-grid">
+          <div class="stat-card">
+            <div class="stat-value" id="totalForms">0</div>
+            <div class="stat-label">Forms</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-value" id="totalElements">0</div>
+            <div class="stat-label">Elements</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-value" id="totalDependencies">0</div>
+            <div class="stat-label">Dependencies</div>
+          </div>
+        </div>
+        <div id="formsList" class="forms-list"></div>
+      </div>
+
+      <!-- Elements Tab -->
+      <div id="elements" class="tab-panel">
+        <div class="search-box">
+          <input type="text" id="searchInput" placeholder="Search elements...">
+        </div>
+        <div id="elementsList" class="elements-list"></div>
+      </div>
+
+      <!-- Dependencies Tab -->
+      <div id="dependencies" class="tab-panel">
+        <div id="dependenciesList" class="dependencies-list"></div>
+      </div>
+    </div>
+
+    <div id="emptyState" class="empty-state">
+      <div class="empty-icon">📋</div>
+      <p>Click "Extract Forms" to analyze the current page</p>
+    </div>
+  </div>
+
+  <script src="demo-json-generator.js"></script>
+  <script src="popup-data-processor.js"></script>
+  <script src="popup.js"></script>
+</body>
+
+</html>
