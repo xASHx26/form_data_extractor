@@ -2,14 +2,17 @@
 const DemoJsonGenerator = {
     /**
      * Generate simple test-case oriented JSON template from extracted data
+     * Now includes hidden element triggers and per-branch test cases
      */
     generateDemoJson(data) {
         const formData = data.forms[0]; // Use first form
         const elements = data.elements;
+        const hiddenElements = data.hiddenElements || [];
+        const triggerMap = data.triggerMap || [];
 
         // Build field map with best identifier as key
         const fields = {};
-        const selectors = {}; // Store selectors separately for reference
+        const selectors = {};
 
         elements.forEach(element => {
             const key = this.getBestKey(element);
@@ -21,35 +24,103 @@ const DemoJsonGenerator = {
             }
         });
 
-        // Create template with test cases
-        const template = {
-            test_cases: [
-                {
-                    name: "valid_submission",
-                    description: "Test with valid data for all required fields",
-                    data: { ...fields },
-                    expected: "success"
-                },
-                {
-                    name: "missing_required_fields",
-                    description: "Test with missing required fields",
-                    data: this.createEmptyFieldsCopy(fields),
-                    expected: "validation_error"
-                },
-                {
-                    name: "invalid_data_format",
-                    description: "Test with invalid data formats",
-                    data: { ...fields },
-                    expected: "validation_error"
+        // Build hidden field map
+        const hiddenFields = {};
+        const hiddenSelectors = {};
+
+        hiddenElements.forEach(element => {
+            const key = this.getBestKey(element);
+            const fieldData = this.createFieldData(element);
+
+            if (fieldData) {
+                fieldData.selectors.hidden_by_default = true;
+                fieldData.selectors.reveal_action = element.visibility ? {
+                    trigger: element.visibility.triggeredBy,
+                    value: element.visibility.triggerValue,
+                    value_text: element.visibility.triggerValueText,
+                    change_type: element.visibility.changeType
+                } : null;
+
+                hiddenFields[key] = fieldData.value;
+                hiddenSelectors[key] = fieldData.selectors;
+            }
+        });
+
+        // Create base test cases
+        const testCases = [
+            {
+                name: "valid_submission",
+                description: "Test with valid data for all required fields",
+                data: { ...fields },
+                expected: "success"
+            },
+            {
+                name: "missing_required_fields",
+                description: "Test with missing required fields",
+                data: this.createEmptyFieldsCopy(fields),
+                expected: "validation_error"
+            },
+            {
+                name: "invalid_data_format",
+                description: "Test with invalid data formats",
+                data: { ...fields },
+                expected: "validation_error"
+            }
+        ];
+
+        // Generate per-branch test cases from trigger map
+        for (const trigger of triggerMap) {
+            for (const tv of (trigger.triggerValues || [])) {
+                const branchName = this.sanitizeKey(`${trigger.triggerLabel || trigger.source}_${tv.valueText}`);
+                const branchFields = { ...fields };
+
+                // Set trigger field to the branch value
+                const triggerKey = this.sanitizeKey(trigger.triggerLabel || trigger.source);
+                branchFields[triggerKey] = tv.value;
+
+                // Add hidden fields that this branch reveals
+                for (const revealedSelector of (tv.revealsElements || [])) {
+                    const matchingHidden = hiddenElements.find(el =>
+                        (el.id && revealedSelector.includes(el.id)) ||
+                        (el.name && revealedSelector.includes(el.name))
+                    );
+                    if (matchingHidden) {
+                        const key = this.getBestKey(matchingHidden);
+                        branchFields[key] = '';
+                    }
                 }
-            ],
-            selectors_reference: selectors,
+
+                testCases.push({
+                    name: `conditional_${branchName}`,
+                    description: `Test conditional flow: ${trigger.triggerLabel || trigger.source} = "${tv.valueText}"`,
+                    prerequisite_steps: [
+                        {
+                            action: trigger.triggerType === 'select' ? 'select_option' : (trigger.triggerType === 'radio' ? 'click_radio' : 'toggle_checkbox'),
+                            target: trigger.source,
+                            value: tv.value,
+                            description: `Set ${trigger.triggerLabel || trigger.source} to "${tv.valueText}" to reveal hidden fields`
+                        }
+                    ],
+                    data: branchFields,
+                    reveals_elements: tv.revealsElements,
+                    expected: "success"
+                });
+            }
+        }
+
+        const template = {
+            test_cases: testCases,
+            selectors_reference: { ...selectors, ...hiddenSelectors },
+            hidden_elements_reference: hiddenSelectors,
+            trigger_map: triggerMap,
             form_info: {
-                form_name: formData.name,
-                form_id: formData.id,
-                form_action: formData.action,
-                form_method: formData.method,
-                total_elements: elements.length
+                form_name: formData ? formData.name : 'Unknown',
+                form_id: formData ? formData.id : '',
+                form_action: formData ? formData.action : '',
+                form_method: formData ? formData.method : '',
+                container_type: formData ? formData.containerType : '',
+                total_elements: elements.length,
+                total_hidden_elements: hiddenElements.length
             }
         };
 

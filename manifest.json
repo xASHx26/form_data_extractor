@@ -5,9 +5,13 @@
   "description": "Extract form elements with IDs, names, XPath, dropdown values, and field dependencies for Selenium automation",
   "permissions": [
     "activeTab",
+    "tabs",
     "scripting",
     "storage"
   ],
+  "background": {
+    "service_worker": "background.js"
+  },
   "action": {
     "default_popup": "popup.html",
     "default_icon": {

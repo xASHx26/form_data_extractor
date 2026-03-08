@@ -10,12 +10,21 @@
 
 <body>
   <div class="container">
+    <!-- Panel mode bar (shown when opened as detached window from picker) -->
+    <div id="panelBar" class="panel-bar hidden">
+      <span class="panel-bar-text">📌 Panel Mode — Section Selected</span>
+      <button id="closePanelBtn" class="btn-close-panel">✕ Close</button>
+    </div>
+
     <header>
       <h1>🔍 Form Extractor</h1>
       <p class="subtitle">Selenium Automation Helper</p>
     </header>
 
     <div class="actions">
+      <button id="pickSectionBtn" class="btn btn-picker">
+        <span class="icon">🎯</span> Pick Section
+      </button>
       <button id="extractBtn" class="btn btn-primary">
         <span class="icon">⚡</span> Extract Forms
       </button>
@@ -28,6 +37,22 @@
       <button id="exportDemoBtn" class="btn btn-demo" disabled>
         <span class="icon">🤖</span> Get Demo JSON
       </button>
+    </div>
+
+    <div id="scopeBanner" class="scope-banner hidden">
+      <span class="scope-icon">🎯</span>
+      <span id="scopeText">Selected: &lt;div&gt;#container</span>
+      <button id="clearScopeBtn" class="btn-clear-scope">✕ Clear</button>
+    </div>
+
+    <div id="discoveryProgress" class="discovery-progress hidden">
+      <div class="discovery-progress-text">
+        <span class="spinner">🔄</span>
+        <span id="discoveryText">Discovering hidden elements...</span>
+      </div>
+      <div class="discovery-bar">
+        <div id="discoveryBarFill" class="discovery-bar-fill"></div>
+      </div>
     </div>
 
     <div id="cacheInfo" class="cache-info hidden">
@@ -67,6 +92,10 @@
           <div class="stat-card">
             <div class="stat-value" id="totalDependencies">0</div>
             <div class="stat-label">Dependencies</div>
+          </div>
+          <div class="stat-card stat-card-hidden">
+            <div class="stat-value" id="totalHidden">0</div>
+            <div class="stat-label">Hidden Found</div>
           </div>
         </div>
         <div id="formsList" class="forms-list"></div>

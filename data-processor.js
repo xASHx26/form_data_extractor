@@ -3,7 +3,10 @@ class DataProcessor {
     /**
      * Process raw form data into structured format
      */
-    static process(formsData, dependencies) {
+    static process(formsData, dependencies, hiddenDiscovery = { discoveries: [], hiddenElements: [] }) {
+        // Enhance static dependencies with dynamic discoveries
+        const enhanced = DependencyDetector.enhanceWithDiscovery(dependencies, hiddenDiscovery.discoveries);
+
         const processed = {
             metadata: {
                 url: window.location.href,
@@ -11,10 +14,15 @@ class DataProcessor {
                 timestamp: new Date().toISOString(),
                 totalForms: formsData.length,
                 totalElements: 0,
-                totalDependencies: dependencies.length
+                totalDependencies: enhanced.dependencies.length,
+                totalHiddenDiscovered: hiddenDiscovery.hiddenElements.length
             },
             forms: [],
-            dependencies: dependencies,
+            dependencies: enhanced.dependencies,
+            triggerMap: enhanced.triggerMap,
+            hiddenElements: hiddenDiscovery.hiddenElements.map((el, i) =>
+                this.processElement(el, 'hidden', i)
+            ),
             elements: []
         };
 
@@ -24,6 +32,9 @@ class DataProcessor {
             processed.elements.push(...processedForm.elements);
             processed.metadata.totalElements += processedForm.elements.length;
         });
+
+        // Add hidden elements to total count
+        processed.metadata.totalElements += processed.hiddenElements.length;
 
         return processed;
     }
@@ -38,6 +49,7 @@ class DataProcessor {
             name: formData.name || `Unnamed Form ${index + 1}`,
             action: formData.action || '',
             method: formData.method || 'GET',
+            containerType: formData.containerType || 'form',
             xpath: formData.xpath,
             cssSelector: formData.cssSelector,
             elementCount: formData.elements.length,
@@ -73,7 +85,14 @@ class DataProcessor {
             dropdownDependency: element.dropdownDependency || null,
             dropdownType: element.dropdownType || null,
             ariaLabel: element.ariaLabel || '',
-            ariaDescribedBy: element.ariaDescribedBy || ''
+            ariaDescribedBy: element.ariaDescribedBy || '',
+            visibility: element.visibility || {
+                initiallyHidden: false,
+                triggeredBy: null,
+                triggerValue: null,
+                triggerValueText: null,
+                changeType: null
+            }
         };
     }
 
@@ -204,7 +223,11 @@ class DataProcessor {
             'Value',
             'Options',
             'Depends On',
-            'ARIA Label'
+            'ARIA Label',
+            'Initially Hidden',
+            'Triggered By',
+            'Trigger Value',
+            'Change Type'
         ];
         rows.push(headers);
 
@@ -231,6 +254,9 @@ class DataProcessor {
             // Extract React selectors
             const react = element.reactSelectors || {};
 
+            // Extract visibility info
+            const vis = element.visibility || {};
+
             const row = [
                 formName,
                 element.label || '',
@@ -249,11 +275,52 @@ class DataProcessor {
                 element.value || '',
                 optionsStr,
                 dependsOnStr,
-                element.ariaLabel || ''
+                element.ariaLabel || '',
+                vis.initiallyHidden ? 'Yes' : 'No',
+                vis.triggeredBy || '',
+                vis.triggerValueText || vis.triggerValue || '',
+                vis.changeType || ''
             ];
 
             rows.push(row);
         });
+
+        // Also add hidden elements as rows
+        if (data.hiddenElements && data.hiddenElements.length > 0) {
+            data.hiddenElements.forEach(element => {
+                const react = element.reactSelectors || {};
+                const vis = element.visibility || {};
+                let optionsStr = '';
+                if (element.options && element.options.length > 0) {
+                    optionsStr = element.options.map(opt => `[${opt.index}] ${opt.label || opt.text}=${opt.value}`).join('; ');
+                }
+                const row = [
+                    '(Hidden Element)',
+                    element.label || '',
+                    element.type || '',
+                    element.id || '',
+                    element.name || '',
+                    element.xpath || '',
+                    element.cssSelector || '',
+                    react.dataTestId || react.dataTest || '',
+                    react.role || '',
+                    react.labelText || '',
+                    react.placeholderText || '',
+                    element.placeholder || '',
+                    element.required ? 'Yes' : 'No',
+                    element.disabled ? 'Yes' : 'No',
+                    element.value || '',
+                    optionsStr,
+                    '',
+                    element.ariaLabel || '',
+                    'Yes',
+                    vis.triggeredBy || '',
+                    vis.triggerValueText || vis.triggerValue || '',
+                    vis.changeType || ''
+                ];
+                rows.push(row);
+            });
+        }
 
         // Convert to CSV string
         return this.convertArrayToCSV(rows);

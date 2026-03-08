@@ -254,6 +254,59 @@ class DependencyDetector {
     getDependencies() {
         return this.dependencies;
     }
+
+    /**
+     * Enhance static dependencies with dynamic discovery data
+     * Merges trigger-value mappings from hidden element discovery into the dependency list
+     */
+    static enhanceWithDiscovery(staticDeps, discoveries) {
+        const enhanced = [...staticDeps];
+        const existingPairs = new Set(staticDeps.map(d => `${d.source}|${d.target}`));
+
+        // Group discoveries by trigger
+        const triggerMap = {};
+        for (const disc of discoveries) {
+            if (!triggerMap[disc.trigger]) {
+                triggerMap[disc.trigger] = {
+                    source: disc.trigger,
+                    triggerType: disc.triggerType,
+                    triggerLabel: disc.triggerLabel,
+                    type: 'controls',
+                    triggerValues: []
+                };
+            }
+
+            const revealedElements = disc.changes.map(c => c.targetSelector);
+            triggerMap[disc.trigger].triggerValues.push({
+                value: disc.value,
+                valueText: disc.valueText,
+                revealsElements: revealedElements,
+                changeTypes: disc.changes.map(c => c.changeType)
+            });
+
+            // Also add individual source->target dependencies
+            for (const change of disc.changes) {
+                const pairKey = `${disc.trigger}|${change.targetSelector}`;
+                if (!existingPairs.has(pairKey)) {
+                    existingPairs.add(pairKey);
+                    enhanced.push({
+                        source: disc.trigger,
+                        target: change.targetSelector,
+                        type: change.changeType === 'enabled' ? 'enables' : 'shows',
+                        condition: `${disc.triggerType} = "${disc.valueText}"`,
+                        discoveredDynamically: true,
+                        triggerValue: disc.value,
+                        triggerValueText: disc.valueText
+                    });
+                }
+            }
+        }
+
+        return {
+            dependencies: enhanced,
+            triggerMap: Object.values(triggerMap)
+        };
+    }
 }
 
 // Make available globally

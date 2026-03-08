@@ -4,6 +4,12 @@ document.addEventListener('DOMContentLoaded', function () {
     const exportBtn = document.getElementById('exportBtn');
     const exportCsvBtn = document.getElementById('exportCsvBtn');
     const exportDemoBtn = document.getElementById('exportDemoBtn');
+    const pickSectionBtn = document.getElementById('pickSectionBtn');
+    const scopeBanner = document.getElementById('scopeBanner');
+    const scopeText = document.getElementById('scopeText');
+    const clearScopeBtn = document.getElementById('clearScopeBtn');
+    const discoveryProgress = document.getElementById('discoveryProgress');
+    const discoveryText = document.getElementById('discoveryText');
     const statusBar = document.getElementById('statusBar');
     const statusText = document.getElementById('statusText');
     const emptyState = document.getElementById('emptyState');
@@ -17,6 +23,109 @@ document.addEventListener('DOMContentLoaded', function () {
     let currentData = null;
     let currentUrl = '';
     let isLoadedFromCache = false;
+    let selectedScope = null; // { selector, tagName, id, className, elementCount }
+    let targetTabId = null; // Tab ID of the page being inspected (used in panel mode)
+
+    // ============================
+    // PANEL MODE DETECTION
+    // ============================
+
+    const urlParams = new URLSearchParams(window.location.search);
+    const isPanelMode = urlParams.get('mode') === 'panel';
+
+    const panelBar = document.getElementById('panelBar');
+    const closePanelBtn = document.getElementById('closePanelBtn');
+
+    if (isPanelMode) {
+        document.body.classList.add('panel-mode');
+        panelBar.classList.remove('hidden');
+
+        // Close panel button
+        closePanelBtn.addEventListener('click', () => {
+            window.close();
+        });
+
+        // Load pending scope and target tab from storage (set by background.js)
+        chrome.storage.local.get(['pendingScope', 'targetTabId', 'targetTabUrl'], (result) => {
+            if (result.pendingScope) {
+                selectedScope = result.pendingScope;
+                targetTabId = result.targetTabId;
+                currentUrl = result.targetTabUrl || '';
+                showScopeBanner(selectedScope);
+
+                // Load saved name for the target URL
+                if (currentUrl) {
+                    chrome.storage.local.get([currentUrl], (nameResult) => {
+                        if (nameResult[currentUrl]) {
+                            customNameInput.value = nameResult[currentUrl];
+                        }
+                    });
+                }
+
+                // Auto-trigger extraction immediately
+                showStatus('Extracting elements from selected section...', false);
+                setTimeout(() => extractBtn.click(), 200);
+            }
+            // Clean up pending data
+            chrome.storage.local.remove(['pendingScope', 'targetTabId', 'targetTabUrl']);
+        });
+    }
+
+    // Helper: get the tab ID to message (panel mode uses stored targetTabId)
+    async function getTargetTabId() {
+        if (isPanelMode && targetTabId) {
+            return targetTabId;
+        }
+        const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+        currentUrl = tab.url;
+        return tab.id;
+    }
+
+    // ============================
+    // CONTENT SCRIPT INJECTION HELPER
+    // ============================
+
+    // Programmatically inject content scripts if they aren't already loaded
+    async function ensureContentScripts(tabId) {
+        try {
+            // Try a quick ping — if content script is loaded it will respond
+            await chrome.tabs.sendMessage(tabId, { action: 'ping' });
+        } catch (e) {
+            // Content script not loaded — inject programmatically
+            console.log('Form Extractor: Injecting content scripts into tab', tabId);
+            await chrome.scripting.executeScript({
+                target: { tabId: tabId },
+                files: ['xpath-generator.js', 'dependency-detector.js', 'data-processor.js', 'content.js']
+            });
+            // Small delay to let scripts initialize
+            await new Promise(r => setTimeout(r, 150));
+        }
+    }
+
+    // Send a message to content script with auto-injection fallback
+    function sendMessageWithRetry(tabId, message) {
+        return new Promise((resolve, reject) => {
+            chrome.tabs.sendMessage(tabId, message, async (response) => {
+                if (chrome.runtime.lastError) {
+                    // First attempt failed — try injecting scripts then retry
+                    try {
+                        await ensureContentScripts(tabId);
+                        chrome.tabs.sendMessage(tabId, message, (retryResponse) => {
+                            if (chrome.runtime.lastError) {
+                                reject(new Error(chrome.runtime.lastError.message));
+                            } else {
+                                resolve(retryResponse);
+                            }
+                        });
+                    } catch (injectError) {
+                        reject(new Error('Failed to inject content scripts: ' + injectError.message));
+                    }
+                } else {
+                    resolve(response);
+                }
+            });
+        });
+    }
 
     // Load saved name for current URL
     async function loadSavedName() {
@@ -101,6 +210,75 @@ document.addEventListener('DOMContentLoaded', function () {
         extractBtn.click();
     });
 
+    // ============================
+    // SECTION PICKER
+    // ============================
+
+    pickSectionBtn.addEventListener('click', async () => {
+        if (pickSectionBtn.classList.contains('active')) {
+            // Cancel picking
+            try {
+                const tabId = await getTargetTabId();
+                sendMessageWithRetry(tabId, { action: 'cancelPicker' }).catch(() => {});
+            } catch (e) { /* ignore */ }
+            pickSectionBtn.classList.remove('active');
+            pickSectionBtn.innerHTML = '<span class="icon">🎯</span> Pick Section';
+            return;
+        }
+
+        pickSectionBtn.classList.add('active');
+        pickSectionBtn.innerHTML = '<span class="icon">⏹️</span> Cancel Pick';
+
+        try {
+            const tabId = await getTargetTabId();
+            await ensureContentScripts(tabId);
+
+            // Start the picker on the page — result will be sent to background.js
+            // which opens a persistent panel window
+            sendMessageWithRetry(tabId, { action: 'pickElement' }).then(response => {
+                if (response && response.pickerStarted) {
+                    showStatus('🎯 Picker active! Click a section on the page. A panel will open with results.', false);
+                }
+            }).catch(error => {
+                pickSectionBtn.classList.remove('active');
+                pickSectionBtn.innerHTML = '<span class="icon">🎯</span> Pick Section';
+                showStatus('Error: ' + error.message, true);
+            });
+        } catch (error) {
+            pickSectionBtn.classList.remove('active');
+            pickSectionBtn.innerHTML = '<span class="icon">🎯</span> Pick Section';
+            showStatus('Error: ' + error.message, true);
+        }
+    });
+
+    // Show scope banner
+    function showScopeBanner(scope) {
+        let label = `<${scope.tagName}>`;
+        if (scope.id) label += `#${scope.id}`;
+        else if (scope.className) label += `.${scope.className.split(' ')[0]}`;
+        label += ` (${scope.elementCount} elements)`;
+
+        scopeText.textContent = `Selected: ${label}`;
+        scopeBanner.classList.remove('hidden');
+    }
+
+    // Clear scope
+    clearScopeBtn.addEventListener('click', () => {
+        selectedScope = null;
+        scopeBanner.classList.add('hidden');
+        showStatus('Scope cleared. Will extract full page.', false);
+    });
+
+    // Show/hide discovery progress
+    function showDiscoveryProgress(text) {
+        discoveryText.textContent = text || 'Discovering hidden elements...';
+        discoveryProgress.classList.remove('hidden');
+    }
+
+    function hideDiscoveryProgress() {
+        discoveryProgress.classList.add('hidden');
+    }
+
     // Save custom name for current URL
     saveNameBtn.addEventListener('click', () => {
         const customName = customNameInput.value.trim();
@@ -146,9 +324,11 @@ document.addEventListener('DOMContentLoaded', function () {
         }
     }
 
-    // Load saved name and cached data on init
-    loadSavedName();
-    autoLoadCache();
+    // Load saved name and cached data on init (skip in panel mode — those query the wrong tab)
+    if (!isPanelMode) {
+        loadSavedName();
+        autoLoadCache();
+    }
 
     // Tab switching
     const tabButtons = document.querySelectorAll('.tab-btn');
@@ -176,33 +356,47 @@ document.addEventListener('DOMContentLoaded', function () {
     extractBtn.addEventListener('click', async () => {
         extractBtn.disabled = true;
         extractBtn.textContent = '⏳ Extracting...';
-        showStatus('Analyzing page...', false);
-        hideCacheInfo(); // Hide cache banner when extracting fresh
+        showStatus('Analyzing page & discovering hidden elements...', false);
+        showDiscoveryProgress('Extracting forms & cycling dropdowns for hidden elements...');
+        hideCacheInfo();
 
         try {
-            const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-            currentUrl = tab.url;
+            const tabId = await getTargetTabId();
+
+            // In non-panel mode, also get URL for naming
+            if (!isPanelMode) {
+                const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+                currentUrl = tab.url;
+            }
 
             // Load saved name for this URL
-            chrome.storage.local.get([currentUrl], (result) => {
-                if (result[currentUrl]) {
-                    customNameInput.value = result[currentUrl];
-                }
-            });
+            if (currentUrl) {
+                chrome.storage.local.get([currentUrl], (result) => {
+                    if (result[currentUrl]) {
+                        customNameInput.value = result[currentUrl];
+                    }
+                });
+            }
 
-            // Inject content script and execute extraction
-            chrome.tabs.sendMessage(tab.id, { action: 'extractForms' }, (response) => {
-                if (chrome.runtime.lastError) {
-                    showStatus('Error: ' + chrome.runtime.lastError.message, true);
-                    extractBtn.disabled = false;
-                    extractBtn.innerHTML = '<span class="icon">⚡</span> Extract Forms';
-                    return;
-                }
+            // Send extraction message with optional scope
+            const message = { action: 'extractForms' };
+            if (selectedScope) {
+                message.scope = selectedScope.selector;
+            }
+
+            sendMessageWithRetry(tabId, message).then(response => {
+                hideDiscoveryProgress();
 
                 if (response && response.success) {
                     currentData = response.data;
                     displayData(currentData);
-                    showStatus(`Extracted ${currentData.metadata.totalElements} elements from ${currentData.metadata.totalForms} form(s)`, false);
+                    const hiddenCount = currentData.metadata.totalHiddenDiscovered || 0;
+                    const scopeLabel = selectedScope ? ' from selected section' : '';
+                    showStatus(
+                        `Extracted ${currentData.metadata.totalElements} elements from ${currentData.metadata.totalForms} form(s)${scopeLabel}` +
+                        (hiddenCount > 0 ? ` • ${hiddenCount} hidden elements discovered!` : ''),
+                        false
+                    );
 
                     // Cache the extracted data
                     cacheFormData(currentUrl, currentData);
@@ -216,6 +410,11 @@ document.addEventListener('DOMContentLoaded', function () {
                     showStatus('Error: ' + (response?.error || 'Unknown error'), true);
                 }
 
+                extractBtn.disabled = false;
+                extractBtn.innerHTML = '<span class="icon">⚡</span> Extract Forms';
+            }).catch(error => {
+                hideDiscoveryProgress();
+                showStatus('Error: ' + error.message, true);
                 extractBtn.disabled = false;
                 extractBtn.innerHTML = '<span class="icon">⚡</span> Extract Forms';
             });
@@ -315,6 +514,7 @@ document.addEventListener('DOMContentLoaded', function () {
         document.getElementById('totalForms').textContent = data.metadata.totalForms;
         document.getElementById('totalElements').textContent = data.metadata.totalElements;
         document.getElementById('totalDependencies').textContent = data.metadata.totalDependencies;
+        document.getElementById('totalHidden').textContent = data.metadata.totalHiddenDiscovered || 0;
 
         const formsList = document.getElementById('formsList');
         formsList.innerHTML = '';
@@ -323,6 +523,71 @@ document.addEventListener('DOMContentLoaded', function () {
             const formCard = createFormCard(form);
             formsList.appendChild(formCard);
         });
+
+        // Show quick element summary table in overview
+        const allElements = [...(data.elements || []), ...(data.hiddenElements || [])];
+        if (allElements.length > 0) {
+            const header = document.createElement('div');
+            header.className = 'hidden-section-header';
+            header.style.marginTop = '12px';
+            header.innerHTML = `\ud83d\udcdd All Elements (${allElements.length})`;
+            formsList.appendChild(header);
+
+            // Search bar for overview
+            const searchWrap = document.createElement('div');
+            searchWrap.className = 'overview-search';
+            searchWrap.innerHTML = '<input type="text" class="overview-search-input" placeholder="\ud83d\udd0d Search elements by ID, name, type, label...">';
+            formsList.appendChild(searchWrap);
+
+            const tableWrap = document.createElement('div');
+            tableWrap.className = 'element-table-wrap';
+            let tableHtml = `<table class="element-table">
+                <thead><tr>
+                    <th>#</th><th>Type</th><th>Label</th><th>Identifier</th><th>Best Locator</th><th></th>
+                </tr></thead><tbody>`;
+
+            allElements.forEach((el, idx) => {
+                const identifier = el.id || el.name || el.placeholder || '(unnamed)';
+                const label = el.label || el.ariaLabel || '';
+                const bestLocator = el.id ? `#${el.id}` : (el.name ? `[name="${el.name}"]` : el.cssSelector || el.xpath);
+                const isHiddenEl = el.visibility && el.visibility.initiallyHidden;
+                tableHtml += `<tr class="element-table-row${isHiddenEl ? ' row-hidden' : ''}">
+                    <td>${idx + 1}</td>
+                    <td><span class="element-type type-${el.type.replace(/\[.*\]/, '')}" style="font-size:10px;padding:2px 6px;">${escapeHtml(el.type)}</span></td>
+                    <td class="cell-label">${escapeHtml(label)}${isHiddenEl ? ' <span class="visibility-badge badge-hidden" style="font-size:9px;padding:1px 4px;">\ud83d\udc41\ufe0f</span>' : ''}</td>
+                    <td class="cell-identifier">${escapeHtml(identifier)}</td>
+                    <td class="cell-locator"><code>${escapeHtml(bestLocator)}</code></td>
+                    <td><button class="copy-locator-btn table-copy-btn" data-copy-value="${escapeHtml(bestLocator)}" title="Copy">\ud83d\udccb</button></td>
+                </tr>`;
+            });
+            tableHtml += '</tbody></table>';
+            tableWrap.innerHTML = tableHtml;
+            formsList.appendChild(tableWrap);
+
+            // Wire copy buttons in table
+            tableWrap.querySelectorAll('.table-copy-btn').forEach(btn => {
+                btn.addEventListener('click', () => {
+                    // Read value from the adjacent code cell instead of attribute (avoids encoding issues)
+                    const row = btn.closest('tr');
+                    const codeEl = row.querySelector('.cell-locator code');
+                    const value = codeEl ? codeEl.textContent : '';
+                    navigator.clipboard.writeText(value).then(() => {
+                        btn.textContent = '\u2713';
+                        btn.style.color = '#28a745';
+                        setTimeout(() => { btn.textContent = '\ud83d\udccb'; btn.style.color = ''; }, 1500);
+                    });
+                });
+            });
+
+            // Wire overview search
+            const overviewSearch = searchWrap.querySelector('.overview-search-input');
+            overviewSearch.addEventListener('input', (e) => {
+                const term = e.target.value.toLowerCase();
+                tableWrap.querySelectorAll('.element-table-row').forEach(row => {
+                    row.style.display = row.textContent.toLowerCase().includes(term) ? '' : 'none';
+                });
+            });
+        }
     }
 
     // Create form card
@@ -358,21 +623,38 @@ document.addEventListener('DOMContentLoaded', function () {
         const elementsList = document.getElementById('elementsList');
         elementsList.innerHTML = '';
 
-        if (data.elements.length === 0) {
+        const allVisible = data.elements || [];
+        const allHidden = data.hiddenElements || [];
+
+        if (allVisible.length === 0 && allHidden.length === 0) {
             elementsList.innerHTML = '<p style="text-align: center; color: #6c757d;">No elements found</p>';
             return;
         }
 
-        data.elements.forEach(element => {
+        // Render visible / always-present elements
+        allVisible.forEach(element => {
             const card = createElementCard(element);
             elementsList.appendChild(card);
         });
+
+        // Render hidden (discovered) elements with a separator
+        if (allHidden.length > 0) {
+            const header = document.createElement('div');
+            header.className = 'hidden-section-header';
+            header.innerHTML = `👁️ Hidden Elements Discovered (${allHidden.length})`;
+            elementsList.appendChild(header);
+
+            allHidden.forEach(element => {
+                const card = createElementCard(element, true);
+                elementsList.appendChild(card);
+            });
+        }
     }
 
     // Create element card
-    function createElementCard(element) {
+    function createElementCard(element, isHidden = false) {
         const card = document.createElement('div');
-        card.className = 'element-card';
+        card.className = 'element-card' + (isHidden ? ' type-hidden' : '');
 
         const typeClass = `type-${element.type.replace(/\[.*\]/, '')}`;
 
@@ -390,65 +672,93 @@ document.addEventListener('DOMContentLoaded', function () {
          </div>`
             : '';
 
-        // Format React selectors
-        let reactSelectorsHtml = '';
-        if (element.reactSelectors) {
-            const react = element.reactSelectors;
-            const reactParts = [];
-
-            if (react.testId) reactParts.push(`<div><strong>TestID:</strong> ${escapeHtml(react.testId)}</div>`);
-            if (react.role) reactParts.push(`<div><strong>Role:</strong> ${escapeHtml(react.role)}</div>`);
-            if (react.labelText) reactParts.push(`<div><strong>Label:</strong> ${escapeHtml(react.labelText)}</div>`);
-            if (react.placeholderText) reactParts.push(`<div><strong>Placeholder:</strong> ${escapeHtml(react.placeholderText)}</div>`);
-            if (react.text) reactParts.push(`<div><strong>Text:</strong> ${escapeHtml(react.text)}</div>`);
-
-            if (reactParts.length > 0) {
-                reactSelectorsHtml = `
-                    <div class="detail-row" style="margin-top: 8px; padding-top: 8px; border-top: 1px solid #e9ecef;">
-                        <div style="font-weight: 600; color: #667eea; margin-bottom: 4px; font-size: 11px;">⚛️ REACT SELECTORS</div>
-                        <div style="font-size: 10px; line-height: 1.5;">${reactParts.join('')}</div>
-                    </div>
-                `;
-            }
+        // Visibility badge
+        let visibilityBadgeHtml = '';
+        const vis = element.visibility;
+        if (vis && vis.initiallyHidden) {
+            visibilityBadgeHtml = '<span class="visibility-badge badge-hidden">👁️ Hidden</span>';
+        } else if (vis && vis.triggeredBy) {
+            visibilityBadgeHtml = '<span class="visibility-badge badge-conditional">🔓 Conditional</span>';
         }
+
+        // Trigger info
+        let triggerInfoHtml = '';
+        if (vis && vis.triggeredBy) {
+            triggerInfoHtml = `
+                <div class="trigger-info">
+                    <strong>Triggered by:</strong> <code>${escapeHtml(vis.triggeredBy)}</code>
+                    = "${escapeHtml(vis.triggerValueText || vis.triggerValue || '')}"
+                    ${vis.changeType ? `<span style="margin-left:6px;color:#6c757d;">(${escapeHtml(vis.changeType)})</span>` : ''}
+                </div>`;
+        }
+
+        // Build locators list — each locator gets its own copy button
+        const locators = [];
+        if (element.id) locators.push({ label: 'ID', value: `#${element.id}`, type: 'id' });
+        if (element.name) locators.push({ label: 'Name', value: `[name="${element.name}"]`, type: 'name' });
+        locators.push({ label: 'XPath', value: element.xpath || '', type: 'xpath' });
+        locators.push({ label: 'CSS', value: element.cssSelector || '', type: 'css' });
+        if (element.reactSelectors) {
+            if (element.reactSelectors.testId) locators.push({ label: 'TestID', value: element.reactSelectors.testId, type: 'testid' });
+            if (element.reactSelectors.role) locators.push({ label: 'Role', value: element.reactSelectors.role, type: 'role' });
+        }
+
+        const locatorsHtml = locators
+            .filter(l => l.value)
+            .map(l => `
+                <div class="locator-row">
+                    <span class="locator-label">${l.label}</span>
+                    <code class="locator-value">${escapeHtml(l.value)}</code>
+                    <button class="copy-locator-btn" title="Copy ${l.label}">📋</button>
+                </div>
+            `).join('');
 
         card.innerHTML = `
       <div class="element-header">
         <span class="element-type ${typeClass}">${element.type}</span>
-        <button class="copy-btn" data-xpath="${escapeHtml(element.xpath)}">Copy XPath</button>
+        ${visibilityBadgeHtml}
+        ${element.label ? `<span class="element-label-text">${escapeHtml(element.label)}</span>` : ''}
       </div>
+      ${triggerInfoHtml}
       <div class="element-details">
         ${element.id ? `<div class="detail-row"><span class="detail-label">ID:</span><span class="detail-value">${escapeHtml(element.id)}</span></div>` : ''}
         ${element.name ? `<div class="detail-row"><span class="detail-label">Name:</span><span class="detail-value">${escapeHtml(element.name)}</span></div>` : ''}
-        ${element.label ? `<div class="detail-row"><span class="detail-label">Label:</span><span class="detail-value">${escapeHtml(element.label)}</span></div>` : ''}
         ${element.placeholder ? `<div class="detail-row"><span class="detail-label">Placeholder:</span><span class="detail-value">${escapeHtml(element.placeholder)}</span></div>` : ''}
         ${optionsHtml}
         ${groupOptionsHtml}
-        <div class="detail-row">
-          <span class="detail-label">XPath:</span>
-          <span class="detail-value">${escapeHtml(element.xpath)}</span>
-        </div>
-        <div class="detail-row">
-          <span class="detail-label">CSS:</span>
-          <span class="detail-value">${escapeHtml(element.cssSelector)}</span>
-        </div>
-        ${reactSelectorsHtml}
         ${element.required ? '<div style="color: #dc3545; font-size: 11px;">⚠ Required</div>' : ''}
         ${element.disabled ? '<div style="color: #6c757d; font-size: 11px;">🚫 Disabled</div>' : ''}
       </div>
+      <div class="locators-section">
+        <div class="locators-header">📍 Locators <span class="copy-all-btn" title="Copy all locators">Copy All</span></div>
+        ${locatorsHtml}
+      </div>
     `;
 
-        // Add copy functionality
-        const copyBtn = card.querySelector('.copy-btn');
-        copyBtn.addEventListener('click', () => {
-            const xpath = copyBtn.dataset.xpath;
-            navigator.clipboard.writeText(xpath).then(() => {
-                copyBtn.textContent = '✓ Copied!';
-                setTimeout(() => {
-                    copyBtn.textContent = 'Copy XPath';
-                }, 2000);
+        // Wire up individual copy buttons — read from the <code> text, not from data attribute
+        card.querySelectorAll('.copy-locator-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const row = btn.closest('.locator-row');
+                const value = row.querySelector('.locator-value').textContent;
+                navigator.clipboard.writeText(value).then(() => {
+                    btn.textContent = '✓';
+                    btn.style.color = '#28a745';
+                    setTimeout(() => { btn.textContent = '📋'; btn.style.color = ''; }, 1500);
+                });
             });
         });
+
+        // Wire up "Copy All" button
+        const copyAllBtn = card.querySelector('.copy-all-btn');
+        if (copyAllBtn) {
+            copyAllBtn.addEventListener('click', () => {
+                const allText = locators.filter(l => l.value).map(l => `${l.label}: ${l.value}`).join('\n');
+                navigator.clipboard.writeText(allText).then(() => {
+                    copyAllBtn.textContent = '✓ Copied!';
+                    setTimeout(() => { copyAllBtn.textContent = 'Copy All'; }, 1500);
+                });
+            });
+        }
 
         return card;
     }
@@ -458,15 +768,41 @@ document.addEventListener('DOMContentLoaded', function () {
         const dependenciesList = document.getElementById('dependenciesList');
         dependenciesList.innerHTML = '';
 
-        if (data.dependencies.length === 0) {
-            dependenciesList.innerHTML = '<p style="text-align: center; color: #6c757d;">No dependencies detected</p>';
+        const deps = data.dependencies || [];
+        const triggerMap = data.triggerMap || [];
+
+        if (deps.length === 0 && triggerMap.length === 0) {
+            // Show element relationships even if no formal dependencies found
+            const allElements = [...(data.elements || []), ...(data.hiddenElements || [])];
+            if (allElements.length > 0) {
+                dependenciesList.innerHTML = `
+                    <p style="text-align: center; color: #6c757d; margin-bottom: 12px;">No static dependencies detected</p>
+                    <p style="text-align: center; color: #999; font-size: 11px;">Dependencies are detected from data attributes (data-depends-on, data-show-when, etc.) and toggle patterns. Hidden element triggers are shown under \ud83d\udd0d Discovered Trigger Mappings if any were found.</p>
+                `;
+            } else {
+                dependenciesList.innerHTML = '<p style="text-align: center; color: #6c757d;">No dependencies detected</p>';
+            }
             return;
         }
 
-        data.dependencies.forEach((dep, index) => {
+        // Static dependencies
+        deps.forEach((dep, index) => {
             const card = createDependencyCard(dep, index);
             dependenciesList.appendChild(card);
         });
+
+        // Dynamic trigger map entries
+        if (triggerMap.length > 0) {
+            const header = document.createElement('div');
+            header.className = 'hidden-section-header';
+            header.innerHTML = `🔍 Discovered Trigger Mappings (${triggerMap.length})`;
+            dependenciesList.appendChild(header);
+
+            triggerMap.forEach((entry, index) => {
+                const card = createTriggerMapCard(entry, index);
+                dependenciesList.appendChild(card);
+            });
+        }
     }
 
     // Create dependency card
@@ -483,15 +819,60 @@ document.addEventListener('DOMContentLoaded', function () {
             'conditionally-shows': '❓'
         };
 
+        const discoveredBadge = dependency.discoveredDynamically
+            ? '<span class="visibility-badge badge-conditional" style="margin-left:8px;">🔍 Discovered</span>'
+            : '';
+
         card.innerHTML = `
       <div class="dependency-title">
         ${typeEmoji[dependency.type] || '🔗'} ${dependency.type.toUpperCase()}
+        ${discoveredBadge}
       </div>
       <div class="dependency-info">
         <strong>Source:</strong> <code>${escapeHtml(dependency.source)}</code>
         <span class="dependency-arrow">→</span>
         <strong>Target:</strong> <code>${escapeHtml(dependency.target)}</code>
         ${dependency.condition ? `<div style="margin-top: 5px;"><strong>Condition:</strong> ${escapeHtml(dependency.condition)}</div>` : ''}
+      </div>
+    `;
+
+        return card;
+    }
+
+    // Create trigger map card for discovered trigger-value mappings
+    function createTriggerMapCard(entry, index) {
+        const card = document.createElement('div');
+        card.className = 'dependency-card type-hidden';
+
+        const triggerTypeEmoji = {
+            'select': '📋',
+            'radio': '🔘',
+            'checkbox': '☑️'
+        };
+
+        const valuesHtml = (entry.triggerValues || []).map(tv => {
+            const reveals = (tv.revealsElements || []).map(el =>
+                `<div style="font-size:10px;margin-left:12px;">• <code>${escapeHtml(el)}</code></div>`
+            ).join('');
+            const changeTypes = (tv.changeTypes || []).join(', ');
+            return `
+                <div class="trigger-value-item">
+                    <strong>"${escapeHtml(tv.valueText || tv.value)}"</strong>
+                    ${changeTypes ? `<span style="color:#6c757d;font-size:10px;"> (${escapeHtml(changeTypes)})</span>` : ''}
+                    ${reveals ? `<div style="margin-top:2px;">${reveals}</div>` : '<div style="font-size:10px;margin-left:12px;color:#6c757d;">No elements revealed</div>'}
+                </div>`;
+        }).join('');
+
+        card.innerHTML = `
+      <div class="dependency-title">
+        ${triggerTypeEmoji[entry.triggerType] || '🎯'} TRIGGER: ${escapeHtml(entry.triggerType || '').toUpperCase()}
+        <span class="visibility-badge badge-hidden" style="margin-left:8px;">🔍 Dynamic</span>
+      </div>
+      <div class="dependency-info">
+        <strong>Trigger Element:</strong> <code>${escapeHtml(entry.trigger)}</code>
+      </div>
+      <div class="trigger-values-list">
+        ${valuesHtml || '<p style="color:#6c757d;font-size:11px;">No values mapped</p>'}
       </div>
     `;
 
