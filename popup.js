@@ -334,13 +334,13 @@ document.addEventListener('DOMContentLoaded', function () {
     const tabButtons = document.querySelectorAll('.tab-btn');
     const tabPanels = document.querySelectorAll('.tab-panel');
 
-    tabButtons.forEach(btn => {
-        btn.addEventListener('click', () => {
-            const tabName = btn.dataset.tab;
+    tabButtons.forEach(tabButton => {
+        tabButton.addEventListener('click', () => {
+            const tabName = tabButton.dataset.tab;
 
             // Update active tab button
-            tabButtons.forEach(b => b.classList.remove('active'));
-            btn.classList.add('active');
+            tabButtons.forEach(otherTabButton => otherTabButton.classList.remove('active'));
+            tabButton.classList.add('active');
 
             // Update active tab panel
             tabPanels.forEach(panel => {
@@ -486,10 +486,10 @@ document.addEventListener('DOMContentLoaded', function () {
     });
 
     // Search functionality
-    searchInput.addEventListener('input', (e) => {
+    searchInput.addEventListener('input', (inputEvent) => {
         if (!currentData) return;
 
-        const searchTerm = e.target.value.toLowerCase();
+        const searchTerm = inputEvent.target.value.toLowerCase();
         const elementCards = document.querySelectorAll('.element-card');
 
         elementCards.forEach(card => {
@@ -546,14 +546,14 @@ document.addEventListener('DOMContentLoaded', function () {
                     <th>#</th><th>Type</th><th>Label</th><th>Identifier</th><th>Best Locator</th><th></th>
                 </tr></thead><tbody>`;
 
-            allElements.forEach((el, idx) => {
-                const identifier = el.id || el.name || el.placeholder || '(unnamed)';
-                const label = el.label || el.ariaLabel || '';
-                const bestLocator = el.id ? `#${el.id}` : (el.name ? `[name="${el.name}"]` : el.cssSelector || el.xpath);
-                const isHiddenEl = el.visibility && el.visibility.initiallyHidden;
+            allElements.forEach((element, elementIndex) => {
+                const identifier = element.id || element.name || element.placeholder || '(unnamed)';
+                const label = element.label || element.ariaLabel || '';
+                const bestLocator = element.id ? `#${element.id}` : (element.name ? `[name="${element.name}"]` : element.cssSelector || element.xpath);
+                const isHiddenEl = element.visibility && element.visibility.initiallyHidden;
                 tableHtml += `<tr class="element-table-row${isHiddenEl ? ' row-hidden' : ''}">
-                    <td>${idx + 1}</td>
-                    <td><span class="element-type type-${el.type.replace(/\[.*\]/, '')}" style="font-size:10px;padding:2px 6px;">${escapeHtml(el.type)}</span></td>
+                    <td>${elementIndex + 1}</td>
+                    <td><span class="element-type type-${element.type.replace(/\[.*\]/, '')}" style="font-size:10px;padding:2px 6px;">${escapeHtml(element.type)}</span></td>
                     <td class="cell-label">${escapeHtml(label)}${isHiddenEl ? ' <span class="visibility-badge badge-hidden" style="font-size:9px;padding:1px 4px;">\ud83d\udc41\ufe0f</span>' : ''}</td>
                     <td class="cell-identifier">${escapeHtml(identifier)}</td>
                     <td class="cell-locator"><code>${escapeHtml(bestLocator)}</code></td>
@@ -565,24 +565,24 @@ document.addEventListener('DOMContentLoaded', function () {
             formsList.appendChild(tableWrap);
 
             // Wire copy buttons in table
-            tableWrap.querySelectorAll('.table-copy-btn').forEach(btn => {
-                btn.addEventListener('click', () => {
+            tableWrap.querySelectorAll('.table-copy-btn').forEach(copyButton => {
+                copyButton.addEventListener('click', () => {
                     // Read value from the adjacent code cell instead of attribute (avoids encoding issues)
-                    const row = btn.closest('tr');
+                    const row = copyButton.closest('tr');
                     const codeEl = row.querySelector('.cell-locator code');
                     const value = codeEl ? codeEl.textContent : '';
                     navigator.clipboard.writeText(value).then(() => {
-                        btn.textContent = '\u2713';
-                        btn.style.color = '#28a745';
-                        setTimeout(() => { btn.textContent = '\ud83d\udccb'; btn.style.color = ''; }, 1500);
+                        copyButton.textContent = '\u2713';
+                        copyButton.style.color = '#28a745';
+                        setTimeout(() => { copyButton.textContent = '\ud83d\udccb'; copyButton.style.color = ''; }, 1500);
                     });
                 });
             });
 
             // Wire overview search
             const overviewSearch = searchWrap.querySelector('.overview-search-input');
-            overviewSearch.addEventListener('input', (e) => {
-                const term = e.target.value.toLowerCase();
+            overviewSearch.addEventListener('input', (inputEvent) => {
+                const term = inputEvent.target.value.toLowerCase();
                 tableWrap.querySelectorAll('.element-table-row').forEach(row => {
                     row.style.display = row.textContent.toLowerCase().includes(term) ? '' : 'none';
                 });
@@ -736,14 +736,14 @@ document.addEventListener('DOMContentLoaded', function () {
     `;
 
         // Wire up individual copy buttons — read from the <code> text, not from data attribute
-        card.querySelectorAll('.copy-locator-btn').forEach(btn => {
-            btn.addEventListener('click', () => {
-                const row = btn.closest('.locator-row');
+        card.querySelectorAll('.copy-locator-btn').forEach(copyButton => {
+            copyButton.addEventListener('click', () => {
+                const row = copyButton.closest('.locator-row');
                 const value = row.querySelector('.locator-value').textContent;
                 navigator.clipboard.writeText(value).then(() => {
-                    btn.textContent = '✓';
-                    btn.style.color = '#28a745';
-                    setTimeout(() => { btn.textContent = '📋'; btn.style.color = ''; }, 1500);
+                    copyButton.textContent = '✓';
+                    copyButton.style.color = '#28a745';
+                    setTimeout(() => { copyButton.textContent = '📋'; copyButton.style.color = ''; }, 1500);
                 });
             });
         });
@@ -752,7 +752,7 @@ document.addEventListener('DOMContentLoaded', function () {
         const copyAllBtn = card.querySelector('.copy-all-btn');
         if (copyAllBtn) {
             copyAllBtn.addEventListener('click', () => {
-                const allText = locators.filter(l => l.value).map(l => `${l.label}: ${l.value}`).join('\n');
+                const allText = locators.filter(locator => locator.value).map(locator => `${locator.label}: ${locator.value}`).join('\n');
                 navigator.clipboard.writeText(allText).then(() => {
                     copyAllBtn.textContent = '✓ Copied!';
                     setTimeout(() => { copyAllBtn.textContent = 'Copy All'; }, 1500);
@@ -850,14 +850,14 @@ document.addEventListener('DOMContentLoaded', function () {
             'checkbox': '☑️'
         };
 
-        const valuesHtml = (entry.triggerValues || []).map(tv => {
-            const reveals = (tv.revealsElements || []).map(el =>
-                `<div style="font-size:10px;margin-left:12px;">• <code>${escapeHtml(el)}</code></div>`
+        const valuesHtml = (entry.triggerValues || []).map(triggerValue => {
+            const reveals = (triggerValue.revealsElements || []).map(revealedElement =>
+                `<div style="font-size:10px;margin-left:12px;">• <code>${escapeHtml(revealedElement)}</code></div>`
             ).join('');
-            const changeTypes = (tv.changeTypes || []).join(', ');
+            const changeTypes = (triggerValue.changeTypes || []).join(', ');
             return `
                 <div class="trigger-value-item">
-                    <strong>"${escapeHtml(tv.valueText || tv.value)}"</strong>
+                    <strong>"${escapeHtml(triggerValue.valueText || triggerValue.value)}"</strong>
                     ${changeTypes ? `<span style="color:#6c757d;font-size:10px;"> (${escapeHtml(changeTypes)})</span>` : ''}
                     ${reveals ? `<div style="margin-top:2px;">${reveals}</div>` : '<div style="font-size:10px;margin-left:12px;color:#6c757d;">No elements revealed</div>'}
                 </div>`;

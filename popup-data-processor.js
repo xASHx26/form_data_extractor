@@ -37,14 +37,14 @@ const DataProcessorPopup = {
         // Add data rows - one row per element
         data.elements.forEach(element => {
             // Get form name
-            const form = data.forms.find(f => f.formIndex === element.formIndex);
+            const form = data.forms.find(formEntry => formEntry.formIndex === element.formIndex);
             const formName = form ? form.name : 'Unknown Form';
 
             // Format options if present (for dropdowns) 
             let optionsStr = '';
             if (element.options && element.options.length > 0) {
                 optionsStr = element.options
-                    .map(opt => `[${opt.index}] ${opt.label || opt.text}=${opt.value}`)
+                    .map(option => `[${option.index}] ${option.label || option.text}=${option.value}`)
                     .join('; ');
             }
 
@@ -58,7 +58,7 @@ const DataProcessorPopup = {
             const react = element.reactSelectors || {};
 
             // Extract visibility info
-            const vis = element.visibility || {};
+            const visibility = element.visibility || {};
 
             const row = [
                 formName,
@@ -79,10 +79,10 @@ const DataProcessorPopup = {
                 optionsStr,
                 dependsOnStr,
                 element.ariaLabel || '',
-                vis.initiallyHidden ? 'Yes' : 'No',
-                vis.triggeredBy || '',
-                vis.triggerValueText || vis.triggerValue || '',
-                vis.changeType || ''
+                visibility.initiallyHidden ? 'Yes' : 'No',
+                visibility.triggeredBy || '',
+                visibility.triggerValueText || visibility.triggerValue || '',
+                visibility.changeType || ''
             ];
 
             rows.push(row);
@@ -92,10 +92,10 @@ const DataProcessorPopup = {
         if (data.hiddenElements && data.hiddenElements.length > 0) {
             data.hiddenElements.forEach(element => {
                 const react = element.reactSelectors || {};
-                const vis = element.visibility || {};
+                const visibility = element.visibility || {};
                 let optionsStr = '';
                 if (element.options && element.options.length > 0) {
-                    optionsStr = element.options.map(opt => `[${opt.index}] ${opt.label || opt.text}=${opt.value}`).join('; ');
+                    optionsStr = element.options.map(option => `[${option.index}] ${option.label || option.text}=${option.value}`).join('; ');
                 }
                 const row = [
                     '(Hidden Element)',
@@ -117,9 +117,9 @@ const DataProcessorPopup = {
                     '',
                     element.ariaLabel || '',
                     'Yes',
-                    vis.triggeredBy || '',
-                    vis.triggerValueText || vis.triggerValue || '',
-                    vis.changeType || ''
+                    visibility.triggeredBy || '',
+                    visibility.triggerValueText || visibility.triggerValue || '',
+                    visibility.changeType || ''
                 ];
                 rows.push(row);
             });

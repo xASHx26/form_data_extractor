@@ -20,8 +20,8 @@ class DataProcessor {
             forms: [],
             dependencies: enhanced.dependencies,
             triggerMap: enhanced.triggerMap,
-            hiddenElements: hiddenDiscovery.hiddenElements.map((el, i) =>
-                this.processElement(el, 'hidden', i)
+            hiddenElements: hiddenDiscovery.hiddenElements.map((element, elementIndex) =>
+                this.processElement(element, 'hidden', elementIndex)
             ),
             elements: []
         };
@@ -53,8 +53,8 @@ class DataProcessor {
             xpath: formData.xpath,
             cssSelector: formData.cssSelector,
             elementCount: formData.elements.length,
-            elements: formData.elements.map((el, elIndex) =>
-                this.processElement(el, index, elIndex)
+            elements: formData.elements.map((element, elIndex) =>
+                this.processElement(element, index, elIndex)
             ),
             statistics: this.calculateFormStats(formData.elements)
         };
@@ -110,17 +110,17 @@ class DataProcessor {
             withLabel: 0
         };
 
-        elements.forEach(el => {
+        elements.forEach(element => {
             // Count by type
-            const type = el.type || el.tagName.toLowerCase();
+            const type = element.type || element.tagName.toLowerCase();
             stats.byType[type] = (stats.byType[type] || 0) + 1;
 
             // Count attributes
-            if (el.required) stats.required++;
-            if (el.disabled) stats.disabled++;
-            if (el.id) stats.withId++;
-            if (el.name) stats.withName++;
-            if (el.label) stats.withLabel++;
+            if (element.required) stats.required++;
+            if (element.disabled) stats.disabled++;
+            if (element.id) stats.withId++;
+            if (element.name) stats.withName++;
+            if (element.label) stats.withLabel++;
         });
 
         return stats;
@@ -148,14 +148,14 @@ class DataProcessor {
         summary.push(`- Total Dependencies: ${data.metadata.totalDependencies}`);
 
         summary.push(`\nForms:`);
-        data.forms.forEach((form, i) => {
-            summary.push(`  ${i + 1}. ${form.name} (${form.elementCount} elements)`);
+        data.forms.forEach((form, formIndex) => {
+            summary.push(`  ${formIndex + 1}. ${form.name} (${form.elementCount} elements)`);
         });
 
         if (data.dependencies.length > 0) {
             summary.push(`\nDependencies:`);
-            data.dependencies.forEach((dep, i) => {
-                summary.push(`  ${i + 1}. ${dep.source} ${dep.type} ${dep.target}`);
+            data.dependencies.forEach((dependency, dependencyIndex) => {
+                summary.push(`  ${dependencyIndex + 1}. ${dependency.source} ${dependency.type} ${dependency.target}`);
             });
         }
 
@@ -166,16 +166,16 @@ class DataProcessor {
      * Filter elements by criteria
      */
     static filterElements(elements, criteria) {
-        return elements.filter(el => {
-            if (criteria.type && el.type !== criteria.type) return false;
-            if (criteria.hasId && !el.id) return false;
-            if (criteria.hasName && !el.name) return false;
-            if (criteria.required !== undefined && el.required !== criteria.required) return false;
-            if (criteria.disabled !== undefined && el.disabled !== criteria.disabled) return false;
+        return elements.filter(element => {
+            if (criteria.type && element.type !== criteria.type) return false;
+            if (criteria.hasId && !element.id) return false;
+            if (criteria.hasName && !element.name) return false;
+            if (criteria.required !== undefined && element.required !== criteria.required) return false;
+            if (criteria.disabled !== undefined && element.disabled !== criteria.disabled) return false;
             if (criteria.search) {
                 const searchLower = criteria.search.toLowerCase();
                 const searchable = [
-                    el.id, el.name, el.label, el.placeholder, el.type
+                    element.id, element.name, element.label, element.placeholder, element.type
                 ].join(' ').toLowerCase();
                 if (!searchable.includes(searchLower)) return false;
             }
@@ -188,10 +188,10 @@ class DataProcessor {
      */
     static groupByType(elements) {
         const grouped = {};
-        elements.forEach(el => {
-            const type = el.type || 'other';
+        elements.forEach(element => {
+            const type = element.type || 'other';
             if (!grouped[type]) grouped[type] = [];
-            grouped[type].push(el);
+            grouped[type].push(element);
         });
         return grouped;
     }
@@ -234,14 +234,14 @@ class DataProcessor {
         // Add data rows - one row per element
         data.elements.forEach(element => {
             // Get form name
-            const form = data.forms.find(f => f.formIndex === element.formIndex);
+            const form = data.forms.find(formEntry => formEntry.formIndex === element.formIndex);
             const formName = form ? form.name : 'Unknown Form';
 
             // Format options if present (for dropdowns)
             let optionsStr = '';
             if (element.options && element.options.length > 0) {
                 optionsStr = element.options
-                    .map(opt => `[${opt.index}] ${opt.label || opt.text}=${opt.value}`)
+                    .map(option => `[${option.index}] ${option.label || option.text}=${option.value}`)
                     .join('; ');
             }
 
@@ -255,7 +255,7 @@ class DataProcessor {
             const react = element.reactSelectors || {};
 
             // Extract visibility info
-            const vis = element.visibility || {};
+            const visibility = element.visibility || {};
 
             const row = [
                 formName,
@@ -276,10 +276,10 @@ class DataProcessor {
                 optionsStr,
                 dependsOnStr,
                 element.ariaLabel || '',
-                vis.initiallyHidden ? 'Yes' : 'No',
-                vis.triggeredBy || '',
-                vis.triggerValueText || vis.triggerValue || '',
-                vis.changeType || ''
+                visibility.initiallyHidden ? 'Yes' : 'No',
+                visibility.triggeredBy || '',
+                visibility.triggerValueText || visibility.triggerValue || '',
+                visibility.changeType || ''
             ];
 
             rows.push(row);
@@ -289,10 +289,10 @@ class DataProcessor {
         if (data.hiddenElements && data.hiddenElements.length > 0) {
             data.hiddenElements.forEach(element => {
                 const react = element.reactSelectors || {};
-                const vis = element.visibility || {};
+                const visibility = element.visibility || {};
                 let optionsStr = '';
                 if (element.options && element.options.length > 0) {
-                    optionsStr = element.options.map(opt => `[${opt.index}] ${opt.label || opt.text}=${opt.value}`).join('; ');
+                    optionsStr = element.options.map(option => `[${option.index}] ${option.label || option.text}=${option.value}`).join('; ');
                 }
                 const row = [
                     '(Hidden Element)',
@@ -314,9 +314,9 @@ class DataProcessor {
                     '',
                     element.ariaLabel || '',
                     'Yes',
-                    vis.triggeredBy || '',
-                    vis.triggerValueText || vis.triggerValue || '',
-                    vis.changeType || ''
+                    visibility.triggeredBy || '',
+                    visibility.triggerValueText || visibility.triggerValue || '',
+                    visibility.changeType || ''
                 ];
                 rows.push(row);
             });
