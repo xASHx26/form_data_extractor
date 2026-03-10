@@ -76,16 +76,16 @@
         });
     }
 
-    function onPickerMouseMove(e) {
+    function onPickerMouseMove(mouseEvent) {
         // Hide overlay momentarily to get element underneath
         pickerOverlay.style.pointerEvents = 'none';
-        const el = document.elementFromPoint(e.clientX, e.clientY);
+        const hoveredElement = document.elementFromPoint(mouseEvent.clientX, mouseEvent.clientY);
         pickerOverlay.style.pointerEvents = '';
 
-        if (!el || el.id?.startsWith('form-extractor-picker')) return;
+        if (!hoveredElement || hoveredElement.id?.startsWith('form-extractor-picker')) return;
 
         // Find the best container (prefer divs, sections, fieldsets, forms over individual inputs)
-        let target = el;
+        let target = hoveredElement;
         const containerTags = ['DIV', 'SECTION', 'FIELDSET', 'FORM', 'MAIN', 'ARTICLE', 'ASIDE', 'NAV', 'UL', 'OL', 'TABLE'];
         if (!containerTags.includes(target.tagName)) {
             // Walk up to nearest container
@@ -128,9 +128,9 @@
         pickerTooltip.style.display = 'block';
     }
 
-    function onPickerClick(e) {
-        e.preventDefault();
-        e.stopPropagation();
+    function onPickerClick(mouseEvent) {
+        mouseEvent.preventDefault();
+        mouseEvent.stopPropagation();
 
         if (!currentHoveredElement) return;
 
@@ -151,8 +151,8 @@
         }
     }
 
-    function onPickerKeyDown(e) {
-        if (e.key === 'Escape') {
+    function onPickerKeyDown(keyboardEvent) {
+        if (keyboardEvent.key === 'Escape') {
             stopElementPicker();
             if (pickerResolve) {
                 pickerResolve(null); // cancelled
@@ -167,8 +167,8 @@
 
         ['form-extractor-picker-overlay', 'form-extractor-picker-highlight',
          'form-extractor-picker-tooltip', 'form-extractor-picker-banner'].forEach(id => {
-            const el = document.getElementById(id);
-            if (el) el.remove();
+            const pickerElement = document.getElementById(id);
+            if (pickerElement) pickerElement.remove();
         });
 
         document.removeEventListener('keydown', onPickerKeyDown);
@@ -190,7 +190,7 @@
                 break;
             }
             const siblings = Array.from(current.parentElement?.children || []).filter(
-                el => el.tagName === current.tagName
+                sibling => sibling.tagName === current.tagName
             );
             if (siblings.length > 1) {
                 const index = siblings.indexOf(current) + 1;
@@ -271,7 +271,7 @@
             if (processedTriggers.has(triggerId)) continue;
             processedTriggers.add(triggerId);
 
-            const originalChecked = group.radios.find(r => r.checked);
+            const originalChecked = group.radios.find(radio => radio.checked);
 
             for (const radio of group.radios) {
                 if (radio === originalChecked) continue;
@@ -303,21 +303,21 @@
                 originalChecked.checked = true;
                 originalChecked.dispatchEvent(new Event('change', { bubbles: true }));
             } else {
-                group.radios.forEach(r => r.checked = false);
+                group.radios.forEach(radio => radio.checked = false);
             }
             await waitForDOMSettle(200);
         }
 
         // Also discover via checkbox toggling
         const checkboxes = Array.from(container.querySelectorAll('input[type="checkbox"]'));
-        for (const cb of checkboxes) {
-            const triggerId = getElementIdentifier(cb);
+        for (const checkbox of checkboxes) {
+            const triggerId = getElementIdentifier(checkbox);
             if (processedTriggers.has(triggerId)) continue;
             processedTriggers.add(triggerId);
 
-            const originalState = cb.checked;
-            cb.checked = !originalState;
-            cb.dispatchEvent(new Event('change', { bubbles: true }));
+            const originalState = checkbox.checked;
+            checkbox.checked = !originalState;
+            checkbox.dispatchEvent(new Event('change', { bubbles: true }));
             await waitForDOMSettle(350);
 
             const newSnapshot = snapshotElementStates(container);
@@ -327,7 +327,7 @@
                     trigger: triggerId,
                     triggerType: 'checkbox',
                     triggerTagName: 'input[type="checkbox"]',
-                    triggerLabel: findLabel(cb),
+                    triggerLabel: findLabel(checkbox),
                     value: String(!originalState),
                     valueText: !originalState ? 'checked' : 'unchecked',
                     changes: changes
@@ -335,8 +335,8 @@
             }
 
             // Reset
-            cb.checked = originalState;
-            cb.dispatchEvent(new Event('change', { bubbles: true }));
+            checkbox.checked = originalState;
+            checkbox.dispatchEvent(new Event('change', { bubbles: true }));
             await waitForDOMSettle(200);
         }
 
@@ -390,29 +390,29 @@
         const containers = container.querySelectorAll('div, section, fieldset, span, p, label');
         const allNodes = [...allElements, ...containers];
 
-        allNodes.forEach(el => {
-            const sel = getElementIdentifier(el);
-            snapshot.set(sel, {
-                visible: isElementVisible(el),
-                disabled: el.disabled || false,
-                display: window.getComputedStyle(el).display,
-                opacity: window.getComputedStyle(el).opacity,
-                classList: el.className ? String(el.className) : ''
+        allNodes.forEach(node => {
+            const selector = getElementIdentifier(node);
+            snapshot.set(selector, {
+                visible: isElementVisible(node),
+                disabled: node.disabled || false,
+                display: window.getComputedStyle(node).display,
+                opacity: window.getComputedStyle(node).opacity,
+                classList: node.className ? String(node.className) : ''
             });
         });
 
         return snapshot;
     }
 
-    function isElementVisible(el) {
-        if (el.hidden) return false;
-        const style = window.getComputedStyle(el);
+    function isElementVisible(element) {
+        if (element.hidden) return false;
+        const style = window.getComputedStyle(element);
         if (style.display === 'none') return false;
         if (style.visibility === 'hidden') return false;
         if (style.opacity === '0') return false;
         // Check parent visibility
-        const parent = el.offsetParent;
-        if (!parent && el.tagName !== 'BODY' && el.tagName !== 'HTML' && style.position !== 'fixed') {
+        const parent = element.offsetParent;
+        if (!parent && element.tagName !== 'BODY' && element.tagName !== 'HTML' && style.position !== 'fixed') {
             return false;
         }
         return true;
@@ -455,11 +455,11 @@
 
         // Check for new elements that appeared in DOM
         const afterAllElements = container.querySelectorAll('input, select, textarea, button');
-        afterAllElements.forEach(el => {
-            const sel = getElementIdentifier(el);
-            if (!before.has(sel) && isElementVisible(el)) {
+        afterAllElements.forEach(domElement => {
+            const selector = getElementIdentifier(domElement);
+            if (!before.has(selector) && isElementVisible(domElement)) {
                 changes.push({
-                    targetSelector: sel,
+                    targetSelector: selector,
                     changeType: 'new',
                     description: `New element appeared in DOM`
                 });
@@ -481,44 +481,44 @@
         return Object.values(groups);
     }
 
-    function getElementIdentifier(el) {
-        if (el.id) return `#${el.id}`;
-        if (el.name && (el.tagName === 'INPUT' || el.tagName === 'SELECT' || el.tagName === 'TEXTAREA')) {
-            return `${el.tagName.toLowerCase()}[name="${el.name}"]`;
+    function getElementIdentifier(element) {
+        if (element.id) return `#${element.id}`;
+        if (element.name && (element.tagName === 'INPUT' || element.tagName === 'SELECT' || element.tagName === 'TEXTAREA')) {
+            return `${element.tagName.toLowerCase()}[name="${element.name}"]`;
         }
-        return generateUniqueSelector(el);
+        return generateUniqueSelector(element);
     }
 
     async function activateTrigger(container, discovery) {
         if (discovery.triggerType === 'select') {
-            const el = container.querySelector(discovery.trigger) || document.querySelector(discovery.trigger);
-            if (el) {
-                el.value = discovery.value;
-                el.dispatchEvent(new Event('change', { bubbles: true }));
+            const triggerElement = container.querySelector(discovery.trigger) || document.querySelector(discovery.trigger);
+            if (triggerElement) {
+                triggerElement.value = discovery.value;
+                triggerElement.dispatchEvent(new Event('change', { bubbles: true }));
             }
         } else if (discovery.triggerType === 'radio') {
             const radios = container.querySelectorAll(discovery.trigger);
-            radios.forEach(r => {
-                if (r.value === discovery.value) {
-                    r.checked = true;
-                    r.dispatchEvent(new Event('change', { bubbles: true }));
+            radios.forEach(radio => {
+                if (radio.value === discovery.value) {
+                    radio.checked = true;
+                    radio.dispatchEvent(new Event('change', { bubbles: true }));
                 }
             });
         } else if (discovery.triggerType === 'checkbox') {
-            const el = container.querySelector(discovery.trigger) || document.querySelector(discovery.trigger);
-            if (el) {
-                el.checked = discovery.value === 'true';
-                el.dispatchEvent(new Event('change', { bubbles: true }));
+            const triggerElement = container.querySelector(discovery.trigger) || document.querySelector(discovery.trigger);
+            if (triggerElement) {
+                triggerElement.checked = discovery.value === 'true';
+                triggerElement.dispatchEvent(new Event('change', { bubbles: true }));
             }
         }
     }
 
     async function resetTrigger(container, discovery) {
         if (discovery.triggerType === 'select') {
-            const el = container.querySelector(discovery.trigger) || document.querySelector(discovery.trigger);
-            if (el && el.options[0]) {
-                el.value = el.options[0].value;
-                el.dispatchEvent(new Event('change', { bubbles: true }));
+            const triggerElement = container.querySelector(discovery.trigger) || document.querySelector(discovery.trigger);
+            if (triggerElement && triggerElement.options[0]) {
+                triggerElement.value = triggerElement.options[0].value;
+                triggerElement.dispatchEvent(new Event('change', { bubbles: true }));
             }
         } else if (discovery.triggerType === 'radio') {
             // Reset to first radio
@@ -528,10 +528,10 @@
                 radios[0].dispatchEvent(new Event('change', { bubbles: true }));
             }
         } else if (discovery.triggerType === 'checkbox') {
-            const el = container.querySelector(discovery.trigger) || document.querySelector(discovery.trigger);
-            if (el) {
-                el.checked = discovery.value !== 'true';
-                el.dispatchEvent(new Event('change', { bubbles: true }));
+            const triggerElement = container.querySelector(discovery.trigger) || document.querySelector(discovery.trigger);
+            if (triggerElement) {
+                triggerElement.checked = discovery.value !== 'true';
+                triggerElement.dispatchEvent(new Event('change', { bubbles: true }));
             }
         }
     }
@@ -616,12 +616,12 @@
 
                 // ALSO extract standalone elements outside forms
                 const allFormElements = new Set();
-                forms.forEach(f => f.querySelectorAll('input, select, textarea, button').forEach(el => allFormElements.add(el)));
+                forms.forEach(form => form.querySelectorAll('input, select, textarea, button').forEach(formElement => allFormElements.add(formElement)));
                 const standaloneEls = Array.from(document.querySelectorAll('input, select, textarea, button'))
-                    .filter(el => !allFormElements.has(el));
+                    .filter(formElement => !allFormElements.has(formElement));
                 if (standaloneEls.length > 0) {
                     const wrapperDiv = document.createElement('div');
-                    standaloneEls.forEach(el => wrapperDiv.appendChild(el.cloneNode(true)));
+                    standaloneEls.forEach(formElement => wrapperDiv.appendChild(formElement.cloneNode(true)));
                     const standaloneFormData = await extractFormElements(document.body, {
                         id: 'standalone',
                         name: 'Standalone Elements (Outside Forms)',
@@ -631,8 +631,8 @@
                     });
                     // Re-extract properly from body filtering already-processed
                     standaloneFormData.elements = [];
-                    for (const el of standaloneEls) {
-                        standaloneFormData.elements.push(await extractElementData(el, standaloneFormData.elements.length));
+                    for (const standaloneElement of standaloneEls) {
+                        standaloneFormData.elements.push(await extractElementData(standaloneElement, standaloneFormData.elements.length));
                     }
                     if (standaloneFormData.elements.length > 0) {
                         formsData.push(standaloneFormData);
@@ -957,15 +957,15 @@
         const groupElements = document.querySelectorAll(selector);
         const options = [];
 
-        groupElements.forEach((el, index) => {
-            const label = findLabel(el);
+        groupElements.forEach((groupElement, index) => {
+            const label = findLabel(groupElement);
             options.push({
                 index: index,
-                value: el.value,
+                value: groupElement.value,
                 label: label,
-                checked: el.checked,
-                disabled: el.disabled,
-                id: el.id || ''
+                checked: groupElement.checked,
+                disabled: groupElement.disabled,
+                id: groupElement.id || ''
             });
         });
 

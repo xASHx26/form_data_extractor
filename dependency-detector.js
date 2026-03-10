@@ -261,42 +261,42 @@ class DependencyDetector {
      */
     static enhanceWithDiscovery(staticDeps, discoveries) {
         const enhanced = [...staticDeps];
-        const existingPairs = new Set(staticDeps.map(d => `${d.source}|${d.target}`));
+        const existingPairs = new Set(staticDeps.map(dependency => `${dependency.source}|${dependency.target}`));
 
         // Group discoveries by trigger
         const triggerMap = {};
-        for (const disc of discoveries) {
-            if (!triggerMap[disc.trigger]) {
-                triggerMap[disc.trigger] = {
-                    source: disc.trigger,
-                    triggerType: disc.triggerType,
-                    triggerLabel: disc.triggerLabel,
+        for (const discovery of discoveries) {
+            if (!triggerMap[discovery.trigger]) {
+                triggerMap[discovery.trigger] = {
+                    source: discovery.trigger,
+                    triggerType: discovery.triggerType,
+                    triggerLabel: discovery.triggerLabel,
                     type: 'controls',
                     triggerValues: []
                 };
             }
 
-            const revealedElements = disc.changes.map(c => c.targetSelector);
-            triggerMap[disc.trigger].triggerValues.push({
-                value: disc.value,
-                valueText: disc.valueText,
+            const revealedElements = discovery.changes.map(change => change.targetSelector);
+            triggerMap[discovery.trigger].triggerValues.push({
+                value: discovery.value,
+                valueText: discovery.valueText,
                 revealsElements: revealedElements,
-                changeTypes: disc.changes.map(c => c.changeType)
+                changeTypes: discovery.changes.map(change => change.changeType)
             });
 
             // Also add individual source->target dependencies
-            for (const change of disc.changes) {
-                const pairKey = `${disc.trigger}|${change.targetSelector}`;
+            for (const change of discovery.changes) {
+                const pairKey = `${discovery.trigger}|${change.targetSelector}`;
                 if (!existingPairs.has(pairKey)) {
                     existingPairs.add(pairKey);
                     enhanced.push({
-                        source: disc.trigger,
+                        source: discovery.trigger,
                         target: change.targetSelector,
                         type: change.changeType === 'enabled' ? 'enables' : 'shows',
-                        condition: `${disc.triggerType} = "${disc.valueText}"`,
+                        condition: `${discovery.triggerType} = "${discovery.valueText}"`,
                         discoveredDynamically: true,
-                        triggerValue: disc.value,
-                        triggerValueText: disc.valueText
+                        triggerValue: discovery.value,
+                        triggerValueText: discovery.valueText
                     });
                 }
             }

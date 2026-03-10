@@ -70,19 +70,19 @@ const DemoJsonGenerator = {
 
         // Generate per-branch test cases from trigger map
         for (const trigger of triggerMap) {
-            for (const tv of (trigger.triggerValues || [])) {
-                const branchName = this.sanitizeKey(`${trigger.triggerLabel || trigger.source}_${tv.valueText}`);
+            for (const triggerValue of (trigger.triggerValues || [])) {
+                const branchName = this.sanitizeKey(`${trigger.triggerLabel || trigger.source}_${triggerValue.valueText}`);
                 const branchFields = { ...fields };
 
                 // Set trigger field to the branch value
                 const triggerKey = this.sanitizeKey(trigger.triggerLabel || trigger.source);
-                branchFields[triggerKey] = tv.value;
+                branchFields[triggerKey] = triggerValue.value;
 
                 // Add hidden fields that this branch reveals
-                for (const revealedSelector of (tv.revealsElements || [])) {
-                    const matchingHidden = hiddenElements.find(el =>
-                        (el.id && revealedSelector.includes(el.id)) ||
-                        (el.name && revealedSelector.includes(el.name))
+                for (const revealedSelector of (triggerValue.revealsElements || [])) {
+                    const matchingHidden = hiddenElements.find(hiddenElement =>
+                        (hiddenElement.id && revealedSelector.includes(hiddenElement.id)) ||
+                        (hiddenElement.name && revealedSelector.includes(hiddenElement.name))
                     );
                     if (matchingHidden) {
                         const key = this.getBestKey(matchingHidden);
@@ -92,17 +92,17 @@ const DemoJsonGenerator = {
 
                 testCases.push({
                     name: `conditional_${branchName}`,
-                    description: `Test conditional flow: ${trigger.triggerLabel || trigger.source} = "${tv.valueText}"`,
+                    description: `Test conditional flow: ${trigger.triggerLabel || trigger.source} = "${triggerValue.valueText}"`,
                     prerequisite_steps: [
                         {
                             action: trigger.triggerType === 'select' ? 'select_option' : (trigger.triggerType === 'radio' ? 'click_radio' : 'toggle_checkbox'),
                             target: trigger.source,
-                            value: tv.value,
-                            description: `Set ${trigger.triggerLabel || trigger.source} to "${tv.valueText}" to reveal hidden fields`
+                            value: triggerValue.value,
+                            description: `Set ${trigger.triggerLabel || trigger.source} to "${triggerValue.valueText}" to reveal hidden fields`
                         }
                     ],
                     data: branchFields,
-                    reveals_elements: tv.revealsElements,
+                    reveals_elements: triggerValue.revealsElements,
                     expected: "success"
                 });
             }
@@ -224,7 +224,7 @@ const DemoJsonGenerator = {
                 selectors: {
                     ...selectors,
                     input_type: "select",
-                    options: options.map(opt => ({ value: opt.value, text: opt.label || opt.text }))
+                    options: options.map(option => ({ value: option.value, text: option.label || option.text }))
                 }
             };
         }
