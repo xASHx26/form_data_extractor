@@ -37,6 +37,18 @@
       <button id="exportDemoBtn" class="btn btn-demo" disabled>
         <span class="icon">🤖</span> Get Demo JSON
       </button>
+      <button id="autoFillBtn" class="btn btn-autofill" disabled>
+        <span class="icon">✏️</span> Auto Fill
+      </button>
+    </div>
+
+    <!-- Post-extraction auto-fill prompt -->
+    <div id="autoFillPrompt" class="autofill-prompt hidden">
+      <span class="autofill-prompt-text">🎲 Want to auto-fill the form with random test data?</span>
+      <div class="autofill-prompt-actions">
+        <button id="autoFillYes" class="btn-prompt-yes">✅ Yes</button>
+        <button id="autoFillNo" class="btn-prompt-no">❌ No</button>
+      </div>
     </div>
 
     <div id="scopeBanner" class="scope-banner hidden">
@@ -75,6 +87,7 @@
       <button class="tab-btn active" data-tab="overview">Overview</button>
       <button class="tab-btn" data-tab="elements">Elements</button>
       <button class="tab-btn" data-tab="dependencies">Dependencies</button>
+      <button class="tab-btn" data-tab="autofill">Auto Fill</button>
     </div>
 
     <div class="tab-content">
@@ -113,6 +126,18 @@
       <div id="dependencies" class="tab-panel">
         <div id="dependenciesList" class="dependencies-list"></div>
       </div>
+
+      <!-- Auto Fill Tab -->
+      <div id="autofill" class="tab-panel">
+        <div class="autofill-toolbar">
+          <button id="addScenarioBtn" class="btn-af btn-af-add">➕ Add Scenario</button>
+          <button id="regenAllBtn" class="btn-af btn-af-regen">🎲 Regenerate All</button>
+          <button id="runAllBtn" class="btn-af btn-af-run">▶️ Run All</button>
+        </div>
+        <div id="scenariosList" class="scenarios-list">
+          <p class="autofill-empty">Extract a form first, then click <strong>Auto Fill</strong> to generate test data.</p>
+        </div>
+      </div>
     </div>
 
     <div id="emptyState" class="empty-state">
@@ -121,6 +146,7 @@
     </div>
   </div>
 
+  <script src="random-data-generator.js"></script>
   <script src="demo-json-generator.js"></script>
   <script src="popup-data-processor.js"></script>
   <script src="popup.js"></script>

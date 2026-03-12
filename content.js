@@ -99,6 +99,19 @@
             }
         }
 
+        // If the container has 0 form elements inside, keep walking up to find one that does
+        if (target.querySelectorAll('input, select, textarea, button').length === 0) {
+            let ancestor = target.parentElement;
+            while (ancestor && ancestor !== document.body && ancestor !== document.documentElement) {
+                if (containerTags.includes(ancestor.tagName) &&
+                    ancestor.querySelectorAll('input, select, textarea, button').length > 0) {
+                    target = ancestor;
+                    break;
+                }
+                ancestor = ancestor.parentElement;
+            }
+        }
+
         currentHoveredElement = target;
 
         // Update highlight position
@@ -1009,6 +1022,250 @@
             stopElementPicker();
             sendResponse({ success: true });
             return false;
+        }
+
+        if (request.action === 'autoFillForm') {
+            const scopeSelector = request.scope || null;
+            const testData = request.testData || [];
+            const results = new Array(testData.length);
+
+            // Helper: get fresh scope every time (AJAX may replace DOM nodes)
+            function getScope() {
+                if (!scopeSelector) return document;
+                return document.querySelector(scopeSelector) || document;
+            }
+
+            // Helper: locate element, searching fresh scope + document fallback
+            function findElementOnce(entry) {
+                const root = getScope();
+                let el = null;
+                if (entry.id) el = root.querySelector(`#${CSS.escape(entry.id)}`);
+                if (!el && entry.name) el = root.querySelector(`[name="${entry.name}"]`);
+                if (!el && entry.cssSelector) {
+                    try { el = root.querySelector(entry.cssSelector); } catch(e) {}
+                }
+                // Fallback: search entire document if scoped search failed
+                if (!el && root !== document) {
+                    if (entry.id) el = document.querySelector(`#${CSS.escape(entry.id)}`);
+                    if (!el && entry.name) el = document.querySelector(`[name="${entry.name}"]`);
+                }
+                if (!el && entry.selector) {
+                    try { el = document.querySelector(entry.selector); } catch(e) {}
+                }
+                return el;
+            }
+
+            // Helper: find element with retries (AJAX may still be loading new fields)
+            async function findElement(entry, maxRetries = 5, retryDelay = 400) {
+                let el = findElementOnce(entry);
+                let attempt = 0;
+                while (!el && attempt < maxRetries) {
+                    attempt++;
+                    await new Promise(r => setTimeout(r, retryDelay));
+                    el = findElementOnce(entry);
+                }
+                return el;
+            }
+
+            // Helper: fire change event via page-context script injection
+            // Content scripts run in an isolated world — window.jQuery is undefined there.
+            // Injecting a <script> into the page world lets us trigger jQuery handlers.
+            function fireChangeEvent(target) {
+                const marker = '__fe_' + Date.now() + '_' + Math.random().toString(36).slice(2);
+                target.setAttribute('data-fe-marker', marker);
+
+                // Native events from content script world
+                target.dispatchEvent(new Event('input', { bubbles: true }));
+                target.dispatchEvent(new Event('change', { bubbles: true }));
+
+                // Inject into PAGE world to trigger jQuery/framework handlers
+                const script = document.createElement('script');
+                script.textContent = `(function(){
+                    var el = document.querySelector('[data-fe-marker="${marker}"]');
+                    if (!el) return;
+                    el.removeAttribute('data-fe-marker');
+                    if (window.jQuery) { window.jQuery(el).trigger('change'); }
+                    else if (window.$) { try { window.$(el).trigger('change'); } catch(e){} }
+                    if (window.angular) {
+                        var s = window.angular.element(el).scope();
+                        if (s) { try { s.$apply(); } catch(e){} }
+                    }
+                })();`;
+                document.documentElement.appendChild(script);
+                script.remove();
+            }
+
+            // Helper: fill a single entry
+            async function fillOne(entry, idx) {
+                if (entry.skipped) {
+                    results[idx] = { selector: entry.selector, status: 'skipped' };
+                    return;
+                }
+
+                try {
+                    const el = await findElement(entry);
+                    if (!el) {
+                        results[idx] = { selector: entry.selector || entry.id || entry.name, status: 'not-found' };
+                        return;
+                    }
+
+                    const tagName = el.tagName.toUpperCase();
+                    const elType = (el.type || '').toLowerCase();
+
+                    // SELECT
+                    if (tagName === 'SELECT') {
+                        const valStr = String(entry.value);
+                        const options = Array.from(el.options);
+                        let matchedOpt = options.find(o => o.value === valStr);
+                        if (!matchedOpt) matchedOpt = options.find(o => o.text.trim() === valStr);
+
+                        if (matchedOpt) {
+                            el.focus();
+                            el.selectedIndex = matchedOpt.index;
+                            const nativeSetter = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value')?.set;
+                            if (nativeSetter) nativeSetter.call(el, matchedOpt.value);
+                            fireChangeEvent(el);
+                            el.blur();
+
+                            // Wait for AJAX
+                            await new Promise(r => setTimeout(r, 500));
+
+                            // Verify — re-find the element (AJAX may have replaced it)
+                            const freshEl = findElementOnce(entry);
+                            if (freshEl && freshEl.value !== matchedOpt.value) {
+                                freshEl.selectedIndex = matchedOpt.index;
+                                if (nativeSetter) nativeSetter.call(freshEl, matchedOpt.value);
+                                fireChangeEvent(freshEl);
+                                await new Promise(r => setTimeout(r, 500));
+                            }
+                            const checkEl = findElementOnce(entry);
+                            results[idx] = {
+                                selector: entry.selector,
+                                status: (checkEl && checkEl.value === matchedOpt.value) ? 'filled' : 'reverted',
+                                value: checkEl ? checkEl.value : matchedOpt.value
+                            };
+                        } else {
+                            results[idx] = { selector: entry.selector, status: 'error', error: `Option "${valStr}" not found` };
+                        }
+                    }
+                    // RADIO
+                    else if (elType === 'radio') {
+                        const root = getScope();
+                        const radios = root.querySelectorAll(`input[name="${el.name}"]`);
+                        let found = false;
+                        radios.forEach(r => {
+                            if (r.value === String(entry.value)) {
+                                r.checked = true;
+                                fireChangeEvent(r);
+                                found = true;
+                            }
+                        });
+                        results[idx] = { selector: entry.selector, status: found ? 'filled' : 'not-found', value: entry.value };
+                    }
+                    // CHECKBOX
+                    else if (elType === 'checkbox') {
+                        const shouldCheck = entry.value === true || entry.value === 'true' || entry.value === 'Checked';
+                        if (el.checked !== shouldCheck) {
+                            el.click(); // Use click() — most reliable for checkboxes
+                        }
+                        results[idx] = { selector: entry.selector, status: 'filled', value: shouldCheck };
+                    }
+                    // React Select (custom dropdown)
+                    else if (el.id && (el.id.includes('select') || el.id.includes('Select')) && el.closest('[class*="select"]')) {
+                        const container = el.closest('[class*="select"]') || el.closest('[class*="Select"]');
+                        const control = container ? (container.querySelector('[class*="control"]') || el) : el;
+                        control.focus();
+                        control.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
+                        control.click();
+                        await new Promise(r => setTimeout(r, 300));
+                        const menuOptions = document.querySelectorAll('[role="option"], .react-select__option, [class*="option"]');
+                        let clicked = false;
+                        menuOptions.forEach(opt => {
+                            if (!clicked && opt.textContent.trim() === entry.displayValue) {
+                                opt.click();
+                                clicked = true;
+                            }
+                        });
+                        if (!clicked) {
+                            el.value = entry.value;
+                            el.dispatchEvent(new Event('input', { bubbles: true }));
+                            await new Promise(r => setTimeout(r, 300));
+                            const options2 = document.querySelectorAll('[role="option"]');
+                            if (options2.length > 0) options2[0].click();
+                        }
+                        results[idx] = { selector: entry.selector, status: 'filled', value: entry.value };
+                    }
+                    // TEXT / TEXTAREA / other inputs
+                    else {
+                        const nativeInputValueSetter = Object.getOwnPropertyDescriptor(
+                            tagName === 'TEXTAREA' ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype, 'value'
+                        )?.set;
+                        if (nativeInputValueSetter) {
+                            nativeInputValueSetter.call(el, entry.value);
+                        } else {
+                            el.value = entry.value;
+                        }
+                        el.focus();
+                        fireChangeEvent(el);
+                        el.dispatchEvent(new Event('blur', { bubbles: true }));
+                        results[idx] = { selector: entry.selector, status: 'filled', value: entry.value };
+                    }
+
+                    await new Promise(r => setTimeout(r, 50));
+                } catch (err) {
+                    results[idx] = { selector: entry.selector || entry.id, status: 'error', error: err.message };
+                }
+            }
+
+            (async () => {
+                // Fill in the order the user arranged (fields array order = fill order)
+                for (let i = 0; i < testData.length; i++) {
+                    const entry = testData[i];
+                    await fillOne(entry, i);
+                    // Wait after this field if specified by user
+                    const waitMs = parseInt(entry.waitAfter) || 0;
+                    if (waitMs > 0) {
+                        await new Promise(r => setTimeout(r, waitMs));
+                    }
+                }
+
+                // Verification pass: re-find and re-check all fields
+                await new Promise(r => setTimeout(r, 800));
+                for (let i = 0; i < testData.length; i++) {
+                    const entry = testData[i];
+                    if (entry.skipped || !results[i] || results[i].status === 'error' || results[i].status === 'not-found') continue;
+
+                    const el = findElementOnce(entry);
+                    if (!el) continue;
+                    const tagName = el.tagName.toUpperCase();
+                    const elType = (el.type || '').toLowerCase();
+
+                    if (elType === 'radio' || elType === 'checkbox') continue;
+
+                    if (tagName === 'SELECT') {
+                        const valStr = String(entry.value);
+                        const options = Array.from(el.options);
+                        let matchedOpt = options.find(o => o.value === valStr);
+                        if (!matchedOpt) matchedOpt = options.find(o => o.text.trim() === valStr);
+                        if (matchedOpt && el.value !== matchedOpt.value) {
+                            el.selectedIndex = matchedOpt.index;
+                            results[i] = { selector: entry.selector, status: 'filled', value: matchedOpt.value, note: 're-applied' };
+                        }
+                    }
+                    else if (tagName === 'INPUT' || tagName === 'TEXTAREA') {
+                        if (el.value !== String(entry.value)) {
+                            const nativeSet = Object.getOwnPropertyDescriptor(
+                                tagName === 'TEXTAREA' ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype, 'value'
+                            )?.set;
+                            if (nativeSet) nativeSet.call(el, entry.value); else el.value = entry.value;
+                            fireChangeEvent(el);
+                        }
+                    }
+                }
+
+                sendResponse({ success: true, results: results });
+            })();
+            return true; // async response
         }
 
         if (request.action === 'discoverHidden') {

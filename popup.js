@@ -20,11 +20,22 @@ document.addEventListener('DOMContentLoaded', function () {
     const cacheText = document.getElementById('cacheText');
     const refreshBtn = document.getElementById('refreshBtn');
 
+    // Auto Fill elements
+    const autoFillBtn = document.getElementById('autoFillBtn');
+    const autoFillPrompt = document.getElementById('autoFillPrompt');
+    const autoFillYes = document.getElementById('autoFillYes');
+    const autoFillNo = document.getElementById('autoFillNo');
+    const addScenarioBtn = document.getElementById('addScenarioBtn');
+    const regenAllBtn = document.getElementById('regenAllBtn');
+    const runAllBtn = document.getElementById('runAllBtn');
+    const scenariosList = document.getElementById('scenariosList');
+
     let currentData = null;
     let currentUrl = '';
     let isLoadedFromCache = false;
     let selectedScope = null; // { selector, tagName, id, className, elementCount }
     let targetTabId = null; // Tab ID of the page being inspected (used in panel mode)
+    let scenarios = []; // Array of { id, name, fields: [...] }
 
     // ============================
     // PANEL MODE DETECTION
@@ -200,6 +211,7 @@ document.addEventListener('DOMContentLoaded', function () {
             exportBtn.disabled = false;
             exportCsvBtn.disabled = false;
             exportDemoBtn.disabled = false;
+            autoFillBtn.disabled = false;
             emptyState.classList.add('hidden');
         }
     }
@@ -405,7 +417,11 @@ document.addEventListener('DOMContentLoaded', function () {
                     exportBtn.disabled = false;
                     exportCsvBtn.disabled = false;
                     exportDemoBtn.disabled = false;
+                    autoFillBtn.disabled = false;
                     emptyState.classList.add('hidden');
+
+                    // Show auto-fill prompt
+                    autoFillPrompt.classList.remove('hidden');
                 } else {
                     showStatus('Error: ' + (response?.error || 'Unknown error'), true);
                 }
@@ -901,5 +917,377 @@ document.addEventListener('DOMContentLoaded', function () {
         const div = document.createElement('div');
         div.textContent = text;
         return div.innerHTML;
+    }
+
+    // ============================
+    // AUTO FILL LOGIC
+    // ============================
+
+    let scenarioIdCounter = 0;
+
+    function generateNewScenario(name) {
+        if (!currentData || !currentData.elements || currentData.elements.length === 0) return null;
+        const allElements = [...(currentData.elements || []), ...(currentData.hiddenElements || [])];
+        const fields = RandomDataGenerator.generateScenario(allElements);
+        scenarioIdCounter++;
+        return {
+            id: scenarioIdCounter,
+            name: name || `Scenario ${scenarioIdCounter}`,
+            fields: fields
+        };
+    }
+
+    function initAutoFill() {
+        scenarios = [];
+        scenarioIdCounter = 0;
+        const s = generateNewScenario('Scenario 1');
+        if (s) scenarios.push(s);
+        renderScenarios();
+        switchToTab('autofill');
+    }
+
+    function switchToTab(tabName) {
+        const tabButtons = document.querySelectorAll('.tab-btn');
+        const tabPanels = document.querySelectorAll('.tab-panel');
+        tabButtons.forEach(b => {
+            b.classList.toggle('active', b.dataset.tab === tabName);
+        });
+        tabPanels.forEach(p => {
+            p.classList.toggle('active', p.id === tabName);
+        });
+    }
+
+    // Post-extraction prompt
+    autoFillYes.addEventListener('click', () => {
+        autoFillPrompt.classList.add('hidden');
+        initAutoFill();
+    });
+
+    autoFillNo.addEventListener('click', () => {
+        autoFillPrompt.classList.add('hidden');
+    });
+
+    // Auto Fill button
+    autoFillBtn.addEventListener('click', () => {
+        if (!currentData) return;
+        if (scenarios.length === 0) {
+            initAutoFill();
+        } else {
+            switchToTab('autofill');
+        }
+    });
+
+    // Add Scenario
+    addScenarioBtn.addEventListener('click', () => {
+        if (!currentData) return;
+        const s = generateNewScenario();
+        if (s) {
+            scenarios.push(s);
+            renderScenarios();
+        }
+    });
+
+    // Regenerate All
+    regenAllBtn.addEventListener('click', () => {
+        if (!currentData) return;
+        const allElements = [...(currentData.elements || []), ...(currentData.hiddenElements || [])];
+        scenarios.forEach(sc => {
+            sc.fields = RandomDataGenerator.generateScenario(allElements);
+        });
+        renderScenarios();
+        showStatus('All scenarios regenerated with new random data', false);
+    });
+
+    // Run All
+    runAllBtn.addEventListener('click', async () => {
+        if (scenarios.length === 0) return;
+        runAllBtn.disabled = true;
+        runAllBtn.textContent = '⏳ Running...';
+
+        for (let i = 0; i < scenarios.length; i++) {
+            showStatus(`Running scenario ${i + 1} of ${scenarios.length}...`, false);
+            await runScenario(scenarios[i].id);
+            if (i < scenarios.length - 1) {
+                await new Promise(r => setTimeout(r, 800));
+            }
+        }
+
+        runAllBtn.disabled = false;
+        runAllBtn.textContent = '▶️ Run All';
+        showStatus(`All ${scenarios.length} scenario(s) completed!`, false);
+    });
+
+    // Run a single scenario
+    async function runScenario(scenarioId) {
+        const scenario = scenarios.find(s => s.id === scenarioId);
+        if (!scenario) return;
+
+        const tabId = await getTargetTabId();
+        const message = {
+            action: 'autoFillForm',
+            scope: selectedScope ? selectedScope.selector : null,
+            testData: scenario.fields
+        };
+
+        try {
+            const response = await sendMessageWithRetry(tabId, message);
+            if (response && response.success) {
+                const results = response.results || [];
+                let filledCount = 0, errorCount = 0, skippedCount = 0;
+
+                results.forEach((r, idx) => {
+                    if (idx < scenario.fields.length) {
+                        scenario.fields[idx].fillStatus = r.status;
+                    }
+                    if (r.status === 'filled') filledCount++;
+                    else if (r.status === 'error' || r.status === 'not-found' || r.status === 'reverted') errorCount++;
+                    else skippedCount++;
+                });
+
+                renderScenarios();
+
+                const totalAttempted = filledCount + errorCount;
+                if (errorCount === 0) {
+                    showStatus(`✅ ${scenario.name}: Filled ${filledCount} field(s) successfully`, false);
+                } else {
+                    showStatus(`⚠️ ${scenario.name}: ${filledCount}/${totalAttempted} filled, ${errorCount} failed`, true);
+                }
+            } else {
+                showStatus(`Error running ${scenario.name}: ${response?.error || 'Unknown'}`, true);
+            }
+        } catch (err) {
+            showStatus(`Error: ${err.message}`, true);
+        }
+    }
+
+    // Duplicate scenario
+    function duplicateScenario(scenarioId) {
+        const source = scenarios.find(s => s.id === scenarioId);
+        if (!source) return;
+        scenarioIdCounter++;
+        const copy = {
+            id: scenarioIdCounter,
+            name: `${source.name} (copy)`,
+            fields: source.fields.map(f => ({ ...f, fillStatus: undefined }))
+        };
+        const idx = scenarios.findIndex(s => s.id === scenarioId);
+        scenarios.splice(idx + 1, 0, copy);
+        renderScenarios();
+    }
+
+    // Delete scenario
+    function deleteScenario(scenarioId) {
+        scenarios = scenarios.filter(s => s.id !== scenarioId);
+        renderScenarios();
+    }
+
+    // Regenerate single scenario
+    function regenScenario(scenarioId) {
+        const sc = scenarios.find(s => s.id === scenarioId);
+        if (!sc || !currentData) return;
+        const allElements = [...(currentData.elements || []), ...(currentData.hiddenElements || [])];
+        sc.fields = RandomDataGenerator.generateScenario(allElements);
+        renderScenarios();
+    }
+
+    // Get type badge color class
+    function getTypeBadgeStyle(type) {
+        const colors = {
+            'text': '#155724;background:#d4edda', 'email': '#155724;background:#d4edda',
+            'tel': '#155724;background:#d4edda', 'url': '#155724;background:#d4edda',
+            'password': '#856404;background:#fff3cd', 'number': '#856404;background:#fff3cd',
+            'date': '#0c5460;background:#d1ecf1', 'datetime-local': '#0c5460;background:#d1ecf1',
+            'time': '#0c5460;background:#d1ecf1', 'month': '#0c5460;background:#d1ecf1',
+            'select': '#004085;background:#cce5ff', 'select-one': '#004085;background:#cce5ff',
+            'radio': '#6f42c1;background:#e7d5f7', 'checkbox': '#0c5460;background:#d1ecf1',
+            'textarea': '#856404;background:#fff3cd', 'range': '#856404;background:#fff3cd',
+            'color': '#333;background:#f0f0f0', 'file': '#6c757d;background:#e9ecef',
+            'hidden': '#6c757d;background:#e9ecef', 'submit': '#721c24;background:#f8d7da',
+            'button': '#721c24;background:#f8d7da'
+        };
+        return colors[type] || '#333;background:#f0f0f0';
+    }
+
+    // Render all scenarios
+    function renderScenarios() {
+        scenariosList.innerHTML = '';
+
+        if (scenarios.length === 0) {
+            scenariosList.innerHTML = '<p class="autofill-empty">No scenarios yet. Click <strong>Add Scenario</strong> or extract a form and accept the auto-fill prompt.</p>';
+            return;
+        }
+
+        scenarios.forEach(scenario => {
+            const card = document.createElement('div');
+            card.className = 'scenario-card';
+
+            // Header
+            const header = document.createElement('div');
+            header.className = 'scenario-header';
+            header.innerHTML = `
+                <div class="scenario-title">
+                    📋 <input type="text" class="scenario-title-input" value="${escapeHtml(scenario.name)}" data-sc-id="${scenario.id}">
+                </div>
+                <div class="scenario-actions">
+                    <button class="btn-sc-run" data-sc-id="${scenario.id}">▶ Run</button>
+                    <button class="btn-sc-regen" data-sc-id="${scenario.id}">🎲 Regen</button>
+                    <button class="btn-sc-dup" data-sc-id="${scenario.id}">📄 Dup</button>
+                    <button class="btn-sc-del" data-sc-id="${scenario.id}">🗑️ Del</button>
+                </div>
+            `;
+            card.appendChild(header);
+
+            // Table
+            const tableWrap = document.createElement('div');
+            tableWrap.className = 'scenario-table-wrap';
+            let rows = '';
+
+            scenario.fields.forEach((field, idx) => {
+                // Ensure fillOrder exists (backward compat)
+                if (field.fillOrder === undefined) field.fillOrder = idx;
+                if (field.waitAfter === undefined) field.waitAfter = 0;
+
+                const typeStyle = getTypeBadgeStyle(field.type);
+                const statusIcon = field.fillStatus
+                    ? `<span class="fill-status status-${field.fillStatus}" title="${field.fillStatus}">${field.fillStatus === 'filled' ? '✅' : field.fillStatus === 'skipped' ? '⏭️' : field.fillStatus === 'not-found' ? '⚠️' : field.fillStatus === 'reverted' ? '🔄' : '❌'}</span>`
+                    : '';
+                const rowClass = field.skipped ? 'row-skipped' : '';
+                const displayLabel = field.label || field.id || field.name || `Field ${idx + 1}`;
+
+                let valueCell = '';
+                if (field.skipped) {
+                    valueCell = `<span style="color:#999;font-style:italic;">${escapeHtml(field.displayValue)}</span>`;
+                } else if (field.type === 'checkbox') {
+                    const isChecked = field.value === true || field.value === 'true' || field.value === 'Checked';
+                    valueCell = `<input type="checkbox" class="field-value-checkbox" data-sc-id="${scenario.id}" data-field-idx="${idx}" ${isChecked ? 'checked' : ''}>`;
+                } else if ((field.type === 'select' || field.type === 'select-one') && field.options && field.options.length > 0) {
+                    const optionsHtml = field.options.map(o =>
+                        `<option value="${escapeHtml(o.value)}" ${o.value === field.value ? 'selected' : ''} ${o.disabled ? 'disabled' : ''}>${escapeHtml(o.text || o.value)}</option>`
+                    ).join('');
+                    valueCell = `<select class="field-value-select" data-sc-id="${scenario.id}" data-field-idx="${idx}">${optionsHtml}</select>`;
+                } else if (field.type === 'radio' && field.groupOptions && field.groupOptions.length > 0) {
+                    const optionsHtml = field.groupOptions.map(o =>
+                        `<option value="${escapeHtml(o.value)}" ${o.value === field.value ? 'selected' : ''} ${o.disabled ? 'disabled' : ''}>${escapeHtml(o.label || o.value)}</option>`
+                    ).join('');
+                    valueCell = `<select class="field-value-select" data-sc-id="${scenario.id}" data-field-idx="${idx}">${optionsHtml}</select>`;
+                } else {
+                    valueCell = `<input type="text" class="field-value-input" data-sc-id="${scenario.id}" data-field-idx="${idx}" value="${escapeHtml(String(field.value))}">`;
+                }
+
+                // Reorder + Wait controls
+                const isFirst = idx === 0;
+                const isLast = idx === scenario.fields.length - 1;
+                const orderCell = `<span class="field-order-controls">`
+                    + `<button class="btn-order-up" data-sc-id="${scenario.id}" data-field-idx="${idx}" ${isFirst ? 'disabled' : ''} title="Move up">▲</button>`
+                    + `<button class="btn-order-down" data-sc-id="${scenario.id}" data-field-idx="${idx}" ${isLast ? 'disabled' : ''} title="Move down">▼</button>`
+                    + `</span>`;
+                const waitCell = `<input type="number" class="field-wait-input" data-sc-id="${scenario.id}" data-field-idx="${idx}" value="${field.waitAfter}" min="0" step="100" title="Wait (ms) after filling this field">`;
+
+                rows += `<tr class="${rowClass}">
+                    <td class="td-order">${orderCell}</td>
+                    <td><span class="field-type-badge" style="color:${typeStyle}">${escapeHtml(field.type)}</span></td>
+                    <td class="field-label-cell" title="${escapeHtml(displayLabel)}">${escapeHtml(displayLabel)}</td>
+                    <td style="min-width:150px;">${valueCell}</td>
+                    <td class="td-wait">${waitCell}</td>
+                    <td>${statusIcon}</td>
+                </tr>`;
+            });
+
+            tableWrap.innerHTML = `<table class="scenario-table">
+                <thead><tr><th class="th-order">Order</th><th>Type</th><th>Label</th><th>Value</th><th class="th-wait">Wait(ms)</th><th></th></tr></thead>
+                <tbody>${rows}</tbody>
+            </table>`;
+            card.appendChild(tableWrap);
+
+            scenariosList.appendChild(card);
+
+            // Wire scenario header buttons
+            header.querySelector('.btn-sc-run').addEventListener('click', () => runScenario(scenario.id));
+            header.querySelector('.btn-sc-regen').addEventListener('click', () => regenScenario(scenario.id));
+            header.querySelector('.btn-sc-dup').addEventListener('click', () => duplicateScenario(scenario.id));
+            header.querySelector('.btn-sc-del').addEventListener('click', () => deleteScenario(scenario.id));
+
+            // Wire name input
+            header.querySelector('.scenario-title-input').addEventListener('change', (e) => {
+                const sc = scenarios.find(s => s.id === scenario.id);
+                if (sc) sc.name = e.target.value;
+            });
+
+            // Wire value edits
+            tableWrap.querySelectorAll('.field-value-input').forEach(input => {
+                input.addEventListener('change', (e) => {
+                    const scId = parseInt(e.target.dataset.scId);
+                    const fIdx = parseInt(e.target.dataset.fieldIdx);
+                    const sc = scenarios.find(s => s.id === scId);
+                    if (sc && sc.fields[fIdx]) {
+                        sc.fields[fIdx].value = e.target.value;
+                        sc.fields[fIdx].displayValue = e.target.value;
+                        sc.fields[fIdx].fillStatus = undefined;
+                    }
+                });
+            });
+
+            tableWrap.querySelectorAll('.field-value-select').forEach(sel => {
+                sel.addEventListener('change', (e) => {
+                    const scId = parseInt(e.target.dataset.scId);
+                    const fIdx = parseInt(e.target.dataset.fieldIdx);
+                    const sc = scenarios.find(s => s.id === scId);
+                    if (sc && sc.fields[fIdx]) {
+                        sc.fields[fIdx].value = e.target.value;
+                        sc.fields[fIdx].displayValue = e.target.options[e.target.selectedIndex]?.text || e.target.value;
+                        sc.fields[fIdx].fillStatus = undefined;
+                    }
+                });
+            });
+
+            tableWrap.querySelectorAll('.field-value-checkbox').forEach(cb => {
+                cb.addEventListener('change', (e) => {
+                    const scId = parseInt(e.target.dataset.scId);
+                    const fIdx = parseInt(e.target.dataset.fieldIdx);
+                    const sc = scenarios.find(s => s.id === scId);
+                    if (sc && sc.fields[fIdx]) {
+                        sc.fields[fIdx].value = e.target.checked;
+                        sc.fields[fIdx].displayValue = e.target.checked ? 'Checked' : 'Unchecked';
+                        sc.fields[fIdx].fillStatus = undefined;
+                    }
+                });
+            });
+
+            // Wire wait-after inputs
+            tableWrap.querySelectorAll('.field-wait-input').forEach(inp => {
+                inp.addEventListener('change', (e) => {
+                    const scId = parseInt(e.target.dataset.scId);
+                    const fIdx = parseInt(e.target.dataset.fieldIdx);
+                    const sc = scenarios.find(s => s.id === scId);
+                    if (sc && sc.fields[fIdx]) {
+                        sc.fields[fIdx].waitAfter = Math.max(0, parseInt(e.target.value) || 0);
+                    }
+                });
+            });
+
+            // Wire reorder buttons
+            tableWrap.querySelectorAll('.btn-order-up').forEach(btn => {
+                btn.addEventListener('click', (e) => {
+                    const scId = parseInt(e.target.dataset.scId);
+                    const fIdx = parseInt(e.target.dataset.fieldIdx);
+                    const sc = scenarios.find(s => s.id === scId);
+                    if (sc && fIdx > 0) {
+                        [sc.fields[fIdx - 1], sc.fields[fIdx]] = [sc.fields[fIdx], sc.fields[fIdx - 1]];
+                        renderScenarios();
+                    }
+                });
+            });
+            tableWrap.querySelectorAll('.btn-order-down').forEach(btn => {
+                btn.addEventListener('click', (e) => {
+                    const scId = parseInt(e.target.dataset.scId);
+                    const fIdx = parseInt(e.target.dataset.fieldIdx);
+                    const sc = scenarios.find(s => s.id === scId);
+                    if (sc && fIdx < sc.fields.length - 1) {
+                        [sc.fields[fIdx], sc.fields[fIdx + 1]] = [sc.fields[fIdx + 1], sc.fields[fIdx]];
+                        renderScenarios();
+                    }
+                });
+            });
+        });
     }
 });
