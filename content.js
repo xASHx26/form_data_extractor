@@ -227,166 +227,250 @@
         const discoveries = [];
         const processedTriggers = new Set();
 
-        // Snapshot currently visible/enabled elements
+        // Fire change event via page-world script injection (for jQuery/Angular/Vue)
+        function firePageEvent(target, eventName) {
+            const marker = '__fe_disc_' + Date.now() + '_' + Math.random().toString(36).slice(2);
+            target.setAttribute('data-fe-marker', marker);
+            target.dispatchEvent(new Event(eventName || 'change', { bubbles: true }));
+            target.dispatchEvent(new Event('input', { bubbles: true }));
+            const script = document.createElement('script');
+            script.textContent = `(function(){
+                var el = document.querySelector('[data-fe-marker="${marker}"]');
+                if (!el) return;
+                el.removeAttribute('data-fe-marker');
+                if (window.jQuery) { window.jQuery(el).trigger('${eventName || 'change'}'); }
+                else if (window.$) { try { window.$(el).trigger('${eventName || 'change'}'); } catch(e){} }
+                if (window.angular) {
+                    var s = window.angular.element(el).scope();
+                    if (s) { try { s.$apply(); } catch(e){} }
+                }
+            })();`;
+            document.documentElement.appendChild(script);
+            script.remove();
+        }
+
+        // Snapshot form element IDs in the DOM (to detect AJAX-injected elements)
+        function snapshotFormElements(root) {
+            const set = new Set();
+            root.querySelectorAll('input, select, textarea, button').forEach(el => {
+                set.add(getElementIdentifier(el));
+            });
+            // Also snapshot from document in case AJAX injects outside the container
+            document.querySelectorAll('input, select, textarea, button').forEach(el => {
+                set.add(getElementIdentifier(el));
+            });
+            return set;
+        }
+
+        // Snapshot visibility states
         const initialSnapshot = snapshotElementStates(container);
+        const initialFormEls = snapshotFormElements(container);
 
-        // Collect all triggers: <select> elements and radio groups
+        // Diff: check visibility changes AND newly created DOM elements
+        function fullDiff(beforeSnapshot, beforeFormEls, root) {
+            const changes = [];
+            const afterSnapshot = snapshotElementStates(root);
+
+            // Visibility/enabled changes
+            afterSnapshot.forEach((afterState, selector) => {
+                const beforeState = beforeSnapshot.get(selector);
+                if (!beforeState) return;
+                if (!beforeState.visible && afterState.visible) {
+                    changes.push({ targetSelector: selector, changeType: 'visible', description: 'Became visible' });
+                }
+                if (beforeState.disabled && !afterState.disabled) {
+                    changes.push({ targetSelector: selector, changeType: 'enabled', description: 'Became enabled' });
+                }
+                if (beforeState.classList !== afterState.classList && beforeState.display === 'none' && afterState.display !== 'none') {
+                    changes.push({ targetSelector: selector, changeType: 'visible', description: 'Display changed from none' });
+                }
+            });
+
+            // Newly created form elements (AJAX-injected)
+            const afterFormEls = snapshotFormElements(root);
+            afterFormEls.forEach(sel => {
+                if (!beforeFormEls.has(sel)) {
+                    const el = root.querySelector(sel) || document.querySelector(sel);
+                    if (el && isElementVisible(el)) {
+                        changes.push({ targetSelector: sel, changeType: 'new', description: 'New element appeared in DOM' });
+                    }
+                }
+            });
+
+            return changes;
+        }
+
+        // ---- DISCOVER VIA SELECT CYCLING ----
         const selects = Array.from(container.querySelectorAll('select'));
-        const radioGroups = getRadioGroups(container);
-
-        // Discover via <select> cycling
         for (const select of selects) {
             if (select.disabled) continue;
             const triggerId = getElementIdentifier(select);
             if (processedTriggers.has(triggerId)) continue;
             processedTriggers.add(triggerId);
 
+            const originalIndex = select.selectedIndex;
             const originalValue = select.value;
             const options = Array.from(select.options);
+            const nativeSetter = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value')?.set;
 
             for (const option of options) {
-                if (option.value === '' || option.value === originalValue) continue;
+                if (option.value === '' || option.value === originalValue || option.disabled) continue;
 
-                // Set value and dispatch events
-                select.value = option.value;
-                select.dispatchEvent(new Event('change', { bubbles: true }));
-                select.dispatchEvent(new Event('input', { bubbles: true }));
+                select.selectedIndex = option.index;
+                if (nativeSetter) nativeSetter.call(select, option.value);
+                select.focus();
+                firePageEvent(select, 'change');
+                select.blur();
 
-                // Wait for DOM updates
-                await waitForDOMSettle(350);
+                await waitForDOMSettle(500);
 
-                // Compare states
-                const newSnapshot = snapshotElementStates(container);
-                const changes = diffSnapshots(initialSnapshot, newSnapshot, container);
-
+                const changes = fullDiff(initialSnapshot, initialFormEls, container);
                 if (changes.length > 0) {
                     discoveries.push({
-                        trigger: triggerId,
-                        triggerType: 'select',
-                        triggerTagName: 'select',
-                        triggerLabel: findLabel(select),
-                        value: option.value,
-                        valueText: option.textContent.trim(),
-                        changes: changes
+                        trigger: triggerId, triggerType: 'select', triggerTagName: 'select',
+                        triggerLabel: findLabel(select), value: option.value,
+                        valueText: option.textContent.trim(), changes: changes
                     });
                 }
             }
 
-            // Reset to original
-            select.value = originalValue;
-            select.dispatchEvent(new Event('change', { bubbles: true }));
-            await waitForDOMSettle(200);
+            // Reset
+            select.selectedIndex = originalIndex;
+            if (nativeSetter) nativeSetter.call(select, originalValue);
+            else select.value = originalValue;
+            firePageEvent(select, 'change');
+            await waitForDOMSettle(300);
         }
 
-        // Discover via radio button cycling
+        // ---- DISCOVER VIA RADIO CYCLING ----
+        const radioGroups = getRadioGroups(container);
         for (const group of radioGroups) {
-            const triggerId = `[name="${group.name}"]`;
+            const triggerId = `input[name="${group.name}"]`;
             if (processedTriggers.has(triggerId)) continue;
             processedTriggers.add(triggerId);
 
             const originalChecked = group.radios.find(r => r.checked);
 
             for (const radio of group.radios) {
-                if (radio === originalChecked) continue;
+                if (radio === originalChecked || radio.disabled) continue;
 
-                radio.checked = true;
-                radio.dispatchEvent(new Event('change', { bubbles: true }));
-                radio.dispatchEvent(new Event('input', { bubbles: true }));
+                radio.click(); // Use click() — triggers all handlers
+                firePageEvent(radio, 'change');
 
-                await waitForDOMSettle(350);
+                await waitForDOMSettle(500);
 
-                const newSnapshot = snapshotElementStates(container);
-                const changes = diffSnapshots(initialSnapshot, newSnapshot, container);
-
+                const changes = fullDiff(initialSnapshot, initialFormEls, container);
                 if (changes.length > 0) {
                     discoveries.push({
-                        trigger: triggerId,
-                        triggerType: 'radio',
-                        triggerTagName: 'input[type="radio"]',
-                        triggerLabel: group.name,
-                        value: radio.value,
-                        valueText: findLabel(radio) || radio.value,
-                        changes: changes
+                        trigger: triggerId, triggerType: 'radio', triggerTagName: 'input[type="radio"]',
+                        triggerLabel: group.name, value: radio.value,
+                        valueText: findLabel(radio) || radio.value, changes: changes
                     });
                 }
             }
 
-            // Reset to original
+            // Reset
             if (originalChecked) {
-                originalChecked.checked = true;
-                originalChecked.dispatchEvent(new Event('change', { bubbles: true }));
+                originalChecked.click();
+                firePageEvent(originalChecked, 'change');
             } else {
-                group.radios.forEach(r => r.checked = false);
+                group.radios.forEach(r => { r.checked = false; });
             }
-            await waitForDOMSettle(200);
+            await waitForDOMSettle(300);
         }
 
-        // Also discover via checkbox toggling
+        // ---- DISCOVER VIA CHECKBOX TOGGLING ----
         const checkboxes = Array.from(container.querySelectorAll('input[type="checkbox"]'));
         for (const cb of checkboxes) {
+            if (cb.disabled) continue;
             const triggerId = getElementIdentifier(cb);
             if (processedTriggers.has(triggerId)) continue;
             processedTriggers.add(triggerId);
 
-            const originalState = cb.checked;
-            cb.checked = !originalState;
-            cb.dispatchEvent(new Event('change', { bubbles: true }));
-            await waitForDOMSettle(350);
+            cb.click(); // Toggle using click() — most reliable
+            firePageEvent(cb, 'change');
+            await waitForDOMSettle(500);
 
-            const newSnapshot = snapshotElementStates(container);
-            const changes = diffSnapshots(initialSnapshot, newSnapshot, container);
+            const changes = fullDiff(initialSnapshot, initialFormEls, container);
             if (changes.length > 0) {
                 discoveries.push({
-                    trigger: triggerId,
-                    triggerType: 'checkbox',
-                    triggerTagName: 'input[type="checkbox"]',
-                    triggerLabel: findLabel(cb),
-                    value: String(!originalState),
-                    valueText: !originalState ? 'checked' : 'unchecked',
-                    changes: changes
+                    trigger: triggerId, triggerType: 'checkbox', triggerTagName: 'input[type="checkbox"]',
+                    triggerLabel: findLabel(cb), value: String(cb.checked),
+                    valueText: cb.checked ? 'checked' : 'unchecked', changes: changes
                 });
             }
 
-            // Reset
-            cb.checked = originalState;
-            cb.dispatchEvent(new Event('change', { bubbles: true }));
-            await waitForDOMSettle(200);
+            // Reset — click again to toggle back
+            cb.click();
+            firePageEvent(cb, 'change');
+            await waitForDOMSettle(300);
         }
 
-        // Now extract full data for every hidden element discovered
+        // ---- DISCOVER VIA TABS / ACCORDIONS / TOGGLE BUTTONS ----
+        const toggleSelectors = [
+            '[role="tab"]', '[data-toggle]', '[data-bs-toggle]',
+            '.accordion-button', '.accordion-header', '.collapse-toggle',
+            '.tab-link', '.nav-tab', '.nav-link',
+            'button[aria-expanded]', '[aria-controls]',
+            '.panel-heading', '.card-header button'
+        ];
+        const toggleEls = Array.from(container.querySelectorAll(toggleSelectors.join(', ')));
+        for (const toggle of toggleEls) {
+            const triggerId = getElementIdentifier(toggle);
+            if (processedTriggers.has(triggerId)) continue;
+            processedTriggers.add(triggerId);
+
+            toggle.click();
+            await waitForDOMSettle(500);
+
+            const changes = fullDiff(initialSnapshot, initialFormEls, container);
+            if (changes.length > 0) {
+                discoveries.push({
+                    trigger: triggerId, triggerType: 'toggle', triggerTagName: toggle.tagName.toLowerCase(),
+                    triggerLabel: toggle.textContent.trim().slice(0, 50),
+                    value: 'clicked', valueText: 'clicked', changes: changes
+                });
+            }
+            // Don't reset toggles — they may be needed for extraction
+        }
+
+        // ---- EXTRACT ALL DISCOVERED HIDDEN ELEMENTS ----
         const hiddenElements = [];
         const hiddenSelectors = new Set();
 
         for (const disc of discoveries) {
             for (const change of disc.changes) {
-                if (!hiddenSelectors.has(change.targetSelector)) {
-                    hiddenSelectors.add(change.targetSelector);
+                if (hiddenSelectors.has(change.targetSelector)) continue;
+                hiddenSelectors.add(change.targetSelector);
 
-                    // Re-trigger to make element visible/enabled for extraction
-                    await activateTrigger(container, disc);
-                    await waitForDOMSettle(350);
+                // Re-trigger to make element visible/enabled
+                await activateTrigger(container, disc);
+                await waitForDOMSettle(500);
 
-                    const targetEl = container.querySelector(change.targetSelector) ||
-                                     document.querySelector(change.targetSelector);
-                    if (targetEl) {
-                        // Extract the element or all elements inside a container
-                        const extractedFromHidden = await extractElementsFromTarget(targetEl);
-                        for (const elData of extractedFromHidden) {
-                            elData.visibility = {
-                                initiallyHidden: true,
-                                triggeredBy: disc.trigger,
-                                triggerValue: disc.value,
-                                triggerValueText: disc.valueText,
-                                changeType: change.changeType
-                            };
-                            hiddenElements.push(elData);
-                        }
-                    }
-
-                    // Reset trigger
-                    await resetTrigger(container, disc);
-                    await waitForDOMSettle(200);
+                // Try to find in container first, then document (AJAX may inject anywhere)
+                let targetEl = null;
+                try { targetEl = container.querySelector(change.targetSelector); } catch(e) {}
+                if (!targetEl) {
+                    try { targetEl = document.querySelector(change.targetSelector); } catch(e) {}
                 }
+
+                if (targetEl) {
+                    const extractedFromHidden = await extractElementsFromTarget(targetEl);
+                    for (const elData of extractedFromHidden) {
+                        elData.visibility = {
+                            initiallyHidden: true,
+                            triggeredBy: disc.trigger,
+                            triggerValue: disc.value,
+                            triggerValueText: disc.valueText,
+                            changeType: change.changeType
+                        };
+                        hiddenElements.push(elData);
+                    }
+                }
+
+                // Reset trigger
+                await resetTrigger(container, disc);
+                await waitForDOMSettle(300);
             }
         }
 
@@ -394,12 +478,10 @@
         return { discoveries, hiddenElements };
     }
 
-    // Snapshot all element visibility/disabled states in a container
+    // Snapshot all element visibility/disabled states
     function snapshotElementStates(container) {
         const snapshot = new Map();
         const allElements = container.querySelectorAll('input, select, textarea, button, fieldset, [class*="conditional"], [data-show-when], [style*="display"]');
-
-        // Also check all divs/sections that may toggle visibility
         const containers = container.querySelectorAll('div, section, fieldset, span, p, label');
         const allNodes = [...allElements, ...containers];
 
@@ -413,7 +495,6 @@
                 classList: el.className ? String(el.className) : ''
             });
         });
-
         return snapshot;
     }
 
@@ -423,63 +504,11 @@
         if (style.display === 'none') return false;
         if (style.visibility === 'hidden') return false;
         if (style.opacity === '0') return false;
-        // Check parent visibility
         const parent = el.offsetParent;
         if (!parent && el.tagName !== 'BODY' && el.tagName !== 'HTML' && style.position !== 'fixed') {
             return false;
         }
         return true;
-    }
-
-    function diffSnapshots(before, after, container) {
-        const changes = [];
-
-        after.forEach((afterState, selector) => {
-            const beforeState = before.get(selector);
-            if (!beforeState) return; // new element—skip for now
-
-            // Became visible
-            if (!beforeState.visible && afterState.visible) {
-                changes.push({
-                    targetSelector: selector,
-                    changeType: 'visible',
-                    description: `Element became visible`
-                });
-            }
-            // Became enabled
-            if (beforeState.disabled && !afterState.disabled) {
-                changes.push({
-                    targetSelector: selector,
-                    changeType: 'enabled',
-                    description: `Element became enabled`
-                });
-            }
-            // CSS class changed (e.g., .show added)
-            if (beforeState.classList !== afterState.classList) {
-                if (beforeState.display === 'none' && afterState.display !== 'none') {
-                    changes.push({
-                        targetSelector: selector,
-                        changeType: 'visible',
-                        description: `Element display changed from none`
-                    });
-                }
-            }
-        });
-
-        // Check for new elements that appeared in DOM
-        const afterAllElements = container.querySelectorAll('input, select, textarea, button');
-        afterAllElements.forEach(el => {
-            const sel = getElementIdentifier(el);
-            if (!before.has(sel) && isElementVisible(el)) {
-                changes.push({
-                    targetSelector: sel,
-                    changeType: 'new',
-                    description: `New element appeared in DOM`
-                });
-            }
-        });
-
-        return changes;
     }
 
     function getRadioGroups(container) {
@@ -506,23 +535,38 @@
         if (discovery.triggerType === 'select') {
             const el = container.querySelector(discovery.trigger) || document.querySelector(discovery.trigger);
             if (el) {
-                el.value = discovery.value;
+                el.selectedIndex = Array.from(el.options).findIndex(o => o.value === discovery.value);
+                const nativeSetter = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value')?.set;
+                if (nativeSetter) nativeSetter.call(el, discovery.value);
+                else el.value = discovery.value;
+                el.focus();
                 el.dispatchEvent(new Event('change', { bubbles: true }));
+                el.dispatchEvent(new Event('input', { bubbles: true }));
+                // Page-world jQuery trigger
+                const marker = '__fe_act_' + Date.now();
+                el.setAttribute('data-fe-marker', marker);
+                const script = document.createElement('script');
+                script.textContent = `(function(){var el=document.querySelector('[data-fe-marker="${marker}"]');if(!el)return;el.removeAttribute('data-fe-marker');if(window.jQuery)window.jQuery(el).trigger('change');else if(window.$)try{window.$(el).trigger('change')}catch(e){}})();`;
+                document.documentElement.appendChild(script);
+                script.remove();
             }
         } else if (discovery.triggerType === 'radio') {
-            const radios = container.querySelectorAll(discovery.trigger);
+            const radios = container.querySelectorAll(discovery.trigger) || document.querySelectorAll(discovery.trigger);
             radios.forEach(r => {
                 if (r.value === discovery.value) {
-                    r.checked = true;
+                    r.click();
                     r.dispatchEvent(new Event('change', { bubbles: true }));
                 }
             });
         } else if (discovery.triggerType === 'checkbox') {
             const el = container.querySelector(discovery.trigger) || document.querySelector(discovery.trigger);
             if (el) {
-                el.checked = discovery.value === 'true';
-                el.dispatchEvent(new Event('change', { bubbles: true }));
+                const wantChecked = discovery.value === 'true';
+                if (el.checked !== wantChecked) el.click();
             }
+        } else if (discovery.triggerType === 'toggle') {
+            const el = container.querySelector(discovery.trigger) || document.querySelector(discovery.trigger);
+            if (el) el.click();
         }
     }
 
@@ -530,26 +574,33 @@
         if (discovery.triggerType === 'select') {
             const el = container.querySelector(discovery.trigger) || document.querySelector(discovery.trigger);
             if (el && el.options[0]) {
+                el.selectedIndex = 0;
                 el.value = el.options[0].value;
                 el.dispatchEvent(new Event('change', { bubbles: true }));
+                const marker = '__fe_rst_' + Date.now();
+                el.setAttribute('data-fe-marker', marker);
+                const script = document.createElement('script');
+                script.textContent = `(function(){var el=document.querySelector('[data-fe-marker="${marker}"]');if(!el)return;el.removeAttribute('data-fe-marker');if(window.jQuery)window.jQuery(el).trigger('change');else if(window.$)try{window.$(el).trigger('change')}catch(e){}})();`;
+                document.documentElement.appendChild(script);
+                script.remove();
             }
         } else if (discovery.triggerType === 'radio') {
-            // Reset to first radio
             const radios = container.querySelectorAll(discovery.trigger);
             if (radios[0]) {
-                radios[0].checked = true;
+                radios[0].click();
                 radios[0].dispatchEvent(new Event('change', { bubbles: true }));
             }
         } else if (discovery.triggerType === 'checkbox') {
             const el = container.querySelector(discovery.trigger) || document.querySelector(discovery.trigger);
             if (el) {
-                el.checked = discovery.value !== 'true';
-                el.dispatchEvent(new Event('change', { bubbles: true }));
+                const wantChecked = discovery.value !== 'true';
+                if (el.checked !== wantChecked) el.click();
             }
         }
+        // Don't reset toggles — they opened panels that may be needed
     }
 
-    // Extract form elements from a target (could be a single element or a container)
+    // Extract form elements from a target (single element or container)
     async function extractElementsFromTarget(target) {
         const results = [];
         const tagName = target.tagName.toUpperCase();
@@ -557,7 +608,6 @@
         if (['INPUT', 'SELECT', 'TEXTAREA', 'BUTTON'].includes(tagName)) {
             results.push(await extractElementData(target, 0));
         } else {
-            // It's a container — extract all form elements inside
             const children = target.querySelectorAll('input, select, textarea, button[type="submit"], button[type="button"]');
             for (let i = 0; i < children.length; i++) {
                 results.push(await extractElementData(children[i], i));
