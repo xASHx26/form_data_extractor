@@ -4,6 +4,8 @@ document.addEventListener('DOMContentLoaded', function () {
     const exportBtn = document.getElementById('exportBtn');
     const exportCsvBtn = document.getElementById('exportCsvBtn');
     const exportDemoBtn = document.getElementById('exportDemoBtn');
+    const exportDepsBtn = document.getElementById('exportDepsBtn');
+    const exportAutoFillJsonBtn = document.getElementById('exportAutoFillJsonBtn');
     const pickSectionBtn = document.getElementById('pickSectionBtn');
     const scopeBanner = document.getElementById('scopeBanner');
     const scopeText = document.getElementById('scopeText');
@@ -211,6 +213,8 @@ document.addEventListener('DOMContentLoaded', function () {
             exportBtn.disabled = false;
             exportCsvBtn.disabled = false;
             exportDemoBtn.disabled = false;
+            exportDepsBtn.disabled = false;
+            exportAutoFillJsonBtn.disabled = false;
             autoFillBtn.disabled = false;
             emptyState.classList.add('hidden');
         }
@@ -336,6 +340,26 @@ document.addEventListener('DOMContentLoaded', function () {
         }
     }
 
+    function generateJsonFilenameWithSuffix(suffix) {
+        const base = generateFilename('json');
+        return base.replace(/\.json$/i, `_${suffix}.json`);
+    }
+
+    function downloadJsonObject(payload, filename) {
+        const jsonData = JSON.stringify(payload, null, 2);
+        const blob = new Blob([jsonData], { type: 'application/json;charset=utf-8' });
+        const url = URL.createObjectURL(blob);
+
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+
+        URL.revokeObjectURL(url);
+    }
+
     // Load saved name and cached data on init (skip in panel mode — those query the wrong tab)
     if (!isPanelMode) {
         loadSavedName();
@@ -417,6 +441,8 @@ document.addEventListener('DOMContentLoaded', function () {
                     exportBtn.disabled = false;
                     exportCsvBtn.disabled = false;
                     exportDemoBtn.disabled = false;
+                    exportDepsBtn.disabled = false;
+                    exportAutoFillJsonBtn.disabled = false;
                     autoFillBtn.disabled = false;
                     emptyState.classList.add('hidden');
 
@@ -445,19 +471,50 @@ document.addEventListener('DOMContentLoaded', function () {
     exportBtn.addEventListener('click', () => {
         if (!currentData) return;
 
-        const jsonData = JSON.stringify(currentData, null, 2);
-        const blob = new Blob([jsonData], { type: 'application/json;charset=utf-8' });
-        const url = URL.createObjectURL(blob);
-
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = generateFilename('json');
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-
-        URL.revokeObjectURL(url);
+        downloadJsonObject(currentData, generateFilename('json'));
         showStatus('JSON exported successfully!', false);
+    });
+
+    // Export Dependencies JSON button click
+    exportDepsBtn.addEventListener('click', () => {
+        if (!currentData) return;
+
+        const payload = {
+            exportType: 'dependencies',
+            exportedAt: new Date().toISOString(),
+            sourceUrl: currentUrl || '',
+            scope: selectedScope || null,
+            metadata: {
+                totalDependencies: currentData?.metadata?.totalDependencies || 0,
+                totalHiddenDiscovered: currentData?.metadata?.totalHiddenDiscovered || 0
+            },
+            dependencies: currentData.dependencies || [],
+            discoveries: currentData.discoveries || [],
+            hiddenElements: currentData.hiddenElements || []
+        };
+
+        downloadJsonObject(payload, generateJsonFilenameWithSuffix('dependencies'));
+        showStatus('Dependencies JSON exported successfully!', false);
+    });
+
+    // Export Auto Fill JSON button click
+    exportAutoFillJsonBtn.addEventListener('click', () => {
+        if (!currentData) return;
+
+        const payload = {
+            exportType: 'autofill',
+            exportedAt: new Date().toISOString(),
+            sourceUrl: currentUrl || '',
+            scope: selectedScope || null,
+            scenarios: scenarios || [],
+            elementPool: {
+                elements: currentData.elements || [],
+                hiddenElements: currentData.hiddenElements || []
+            }
+        };
+
+        downloadJsonObject(payload, generateJsonFilenameWithSuffix('autofill'));
+        showStatus('Auto Fill JSON exported successfully!', false);
     });
 
     // Export CSV button click

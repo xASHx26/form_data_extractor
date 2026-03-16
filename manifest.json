@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "Form Extractor for Selenium",
+  "name": "Form Extractor Pro",
   "version": "1.0.0",
-  "description": "Extract form elements with IDs, names, XPath, dropdown values, and field dependencies for Selenium automation",
+  "description": "Extract form elements, dependencies, hidden mappings, and auto-fill scenarios for advanced form automation",
   "permissions": [
     "activeTab",
     "tabs",
