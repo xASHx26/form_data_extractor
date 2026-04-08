@@ -24,6 +24,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
     // Auto Fill elements
     const autoFillBtn = document.getElementById('autoFillBtn');
+    const smartFillBtn = document.getElementById('smartFillBtn');
     const autoFillPrompt = document.getElementById('autoFillPrompt');
     const autoFillYes = document.getElementById('autoFillYes');
     const autoFillNo = document.getElementById('autoFillNo');
@@ -1031,6 +1032,65 @@ document.addEventListener('DOMContentLoaded', function () {
             initAutoFill();
         } else {
             switchToTab('autofill');
+        }
+    });
+
+    // Smart Fill & Save button
+    smartFillBtn.addEventListener('click', async () => {
+        smartFillBtn.disabled = true;
+        smartFillBtn.classList.add('running');
+        smartFillBtn.innerHTML = '<span class="icon">⏳</span> Filling...';
+        showDiscoveryProgress('Smart filling all fields including hidden ones...');
+
+        try {
+            const tabId = await getTargetTabId();
+            await ensureContentScripts(tabId);
+
+            const message = { action: 'smartFillForm' };
+            if (selectedScope) {
+                message.scope = selectedScope.selector;
+            }
+
+            const response = await sendMessageWithRetry(tabId, message);
+            hideDiscoveryProgress();
+
+            if (response && response.success) {
+                const data = response.data;
+                const filled = data.totalFieldsFilled || 0;
+                const hidden = data.hiddenFieldsFilled || 0;
+                const rounds = data.rounds || 1;
+
+                // Auto-download JSON
+                const payload = {
+                    exportType: 'smart-fill',
+                    smartFillAt: data.smartFillAt || new Date().toISOString(),
+                    sourceUrl: currentUrl || '',
+                    scope: selectedScope ? selectedScope.selector : null,
+                    rounds: rounds,
+                    totalFieldsFilled: filled,
+                    hiddenFieldsFilled: hidden,
+                    fields: data.fields || []
+                };
+
+                const filename = generateJsonFilenameWithSuffix('smart_fill');
+                downloadJsonObject(payload, filename);
+
+                showStatus(
+                    `✅ Smart Fill done! ${filled} field(s) filled in ${rounds} round(s)` +
+                    (hidden > 0 ? ` • ${hidden} hidden field(s) triggered & filled` : '') +
+                    ` — JSON saved as ${filename}`,
+                    false
+                );
+            } else {
+                showStatus('Smart Fill error: ' + (response?.error || 'Unknown error'), true);
+            }
+        } catch (err) {
+            hideDiscoveryProgress();
+            showStatus('Smart Fill error: ' + err.message, true);
+        } finally {
+            smartFillBtn.disabled = false;
+            smartFillBtn.classList.remove('running');
+            smartFillBtn.innerHTML = '<span class="icon">🚀</span> Smart Fill &amp; Save';
         }
     });
 

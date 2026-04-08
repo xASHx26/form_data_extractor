@@ -2,160 +2,164 @@
 <html lang="en">
 
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Form Extractor</title>
-  <link rel="stylesheet" href="popup.css">
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Form Extractor</title>
+    <link rel="stylesheet" href="popup.css">
 </head>
 
 <body>
-  <div class="container">
-    <!-- Panel mode bar (shown when opened as detached window from picker) -->
-    <div id="panelBar" class="panel-bar hidden">
-      <span class="panel-bar-text">📌 Panel Mode — Section Selected</span>
-      <button id="closePanelBtn" class="btn-close-panel">✕ Close</button>
-    </div>
-
-    <header>
-      <h1>🔍 Form Extractor</h1>
-      <p class="subtitle">Advanced Form Automation Toolkit</p>
-    </header>
-
-    <div class="actions">
-      <button id="pickSectionBtn" class="btn btn-picker">
-        <span class="icon">🎯</span> Pick Section
-      </button>
-      <button id="extractBtn" class="btn btn-primary">
-        <span class="icon">⚡</span> Extract Forms
-      </button>
-      <button id="exportBtn" class="btn btn-secondary" disabled>
-        <span class="icon">📄</span> Export JSON
-      </button>
-      <button id="exportCsvBtn" class="btn btn-secondary" disabled>
-        <span class="icon">📊</span> Export CSV
-      </button>
-      <button id="exportDemoBtn" class="btn btn-demo" disabled>
-        <span class="icon">🤖</span> Get Demo JSON
-      </button>
-      <button id="exportDepsBtn" class="btn btn-secondary" disabled>
-        <span class="icon">🧩</span> Dependencies JSON
-      </button>
-      <button id="exportAutoFillJsonBtn" class="btn btn-secondary" disabled>
-        <span class="icon">🎲</span> Auto Fill JSON
-      </button>
-      <button id="autoFillBtn" class="btn btn-autofill" disabled>
-        <span class="icon">✏️</span> Auto Fill
-      </button>
-    </div>
-
-    <!-- Post-extraction auto-fill prompt -->
-    <div id="autoFillPrompt" class="autofill-prompt hidden">
-      <span class="autofill-prompt-text">🎲 Want to auto-fill the form with random test data?</span>
-      <div class="autofill-prompt-actions">
-        <button id="autoFillYes" class="btn-prompt-yes">✅ Yes</button>
-        <button id="autoFillNo" class="btn-prompt-no">❌ No</button>
-      </div>
-    </div>
-
-    <div id="scopeBanner" class="scope-banner hidden">
-      <span class="scope-icon">🎯</span>
-      <span id="scopeText">Selected: &lt;div&gt;#container</span>
-      <button id="clearScopeBtn" class="btn-clear-scope">✕ Clear</button>
-    </div>
-
-    <div id="discoveryProgress" class="discovery-progress hidden">
-      <div class="discovery-progress-text">
-        <span class="spinner">🔄</span>
-        <span id="discoveryText">Discovering hidden elements...</span>
-      </div>
-      <div class="discovery-bar">
-        <div id="discoveryBarFill" class="discovery-bar-fill"></div>
-      </div>
-    </div>
-
-    <div id="cacheInfo" class="cache-info hidden">
-      <span class="cache-icon">💾</span>
-      <span id="cacheText">Using cached data</span>
-      <button id="refreshBtn" class="btn-refresh">🔄 Refresh</button>
-    </div>
-
-    <div id="statusBar" class="status-bar hidden">
-      <span id="statusText"></span>
-    </div>
-
-    <div class="naming-section">
-      <label for="customName">Export Name:</label>
-      <input type="text" id="customName" placeholder="Enter custom name (optional)">
-      <button id="saveNameBtn" class="btn-save">💾 Save</button>
-    </div>
-
-    <div class="tabs">
-      <button class="tab-btn active" data-tab="overview">Overview</button>
-      <button class="tab-btn" data-tab="elements">Elements</button>
-      <button class="tab-btn" data-tab="dependencies">Dependencies</button>
-      <button class="tab-btn" data-tab="autofill">Auto Fill</button>
-    </div>
-
-    <div class="tab-content">
-      <!-- Overview Tab -->
-      <div id="overview" class="tab-panel active">
-        <div id="summaryStats" class="stats-grid">
-          <div class="stat-card">
-            <div class="stat-value" id="totalForms">0</div>
-            <div class="stat-label">Forms</div>
-          </div>
-          <div class="stat-card">
-            <div class="stat-value" id="totalElements">0</div>
-            <div class="stat-label">Elements</div>
-          </div>
-          <div class="stat-card">
-            <div class="stat-value" id="totalDependencies">0</div>
-            <div class="stat-label">Dependencies</div>
-          </div>
-          <div class="stat-card stat-card-hidden">
-            <div class="stat-value" id="totalHidden">0</div>
-            <div class="stat-label">Hidden Found</div>
-          </div>
+    <div class="container">
+        <!-- Panel mode bar (shown when opened as detached window from picker) -->
+        <div id="panelBar" class="panel-bar hidden">
+            <span class="panel-bar-text">📌 Panel Mode — Section Selected</span>
+            <button id="closePanelBtn" class="btn-close-panel">✕ Close</button>
         </div>
-        <div id="formsList" class="forms-list"></div>
-      </div>
 
-      <!-- Elements Tab -->
-      <div id="elements" class="tab-panel">
-        <div class="search-box">
-          <input type="text" id="searchInput" placeholder="Search elements...">
-        </div>
-        <div id="elementsList" class="elements-list"></div>
-      </div>
+        <header>
+            <h1>🔍 Form Extractor</h1>
+            <p class="subtitle">Advanced Form Automation Toolkit</p>
+        </header>
 
-      <!-- Dependencies Tab -->
-      <div id="dependencies" class="tab-panel">
-        <div id="dependenciesList" class="dependencies-list"></div>
-      </div>
+        <div class="actions">
+            <button id="pickSectionBtn" class="btn btn-picker">
+                <span class="icon">🎯</span> Pick Section
+            </button>
+            <button id="extractBtn" class="btn btn-primary">
+                <span class="icon">⚡</span> Extract Forms
+            </button>
+            <button id="smartFillBtn" class="btn btn-smartfill">
+                <span class="icon">🚀</span> Smart Fill &amp; Save
+            </button>
+            <button id="exportBtn" class="btn btn-secondary" disabled>
+                <span class="icon">📄</span> Export JSON
+            </button>
+            <button id="exportCsvBtn" class="btn btn-secondary" disabled>
+                <span class="icon">📊</span> Export CSV
+            </button>
+            <button id="exportDemoBtn" class="btn btn-demo" disabled>
+                <span class="icon">🤖</span> Get Demo JSON
+            </button>
+            <button id="exportDepsBtn" class="btn btn-secondary" disabled>
+                <span class="icon">🧩</span> Dependencies JSON
+            </button>
+            <button id="exportAutoFillJsonBtn" class="btn btn-secondary" disabled>
+                <span class="icon">🎲</span> Auto Fill JSON
+            </button>
+            <button id="autoFillBtn" class="btn btn-autofill" disabled>
+                <span class="icon">✏️</span> Auto Fill
+            </button>
+        </div>
 
-      <!-- Auto Fill Tab -->
-      <div id="autofill" class="tab-panel">
-        <div class="autofill-toolbar">
-          <button id="addScenarioBtn" class="btn-af btn-af-add">➕ Add Scenario</button>
-          <button id="regenAllBtn" class="btn-af btn-af-regen">🎲 Regenerate All</button>
-          <button id="runAllBtn" class="btn-af btn-af-run">▶️ Run All</button>
+        <!-- Post-extraction auto-fill prompt -->
+        <div id="autoFillPrompt" class="autofill-prompt hidden">
+            <span class="autofill-prompt-text">🎲 Want to auto-fill the form with random test data?</span>
+            <div class="autofill-prompt-actions">
+                <button id="autoFillYes" class="btn-prompt-yes">✅ Yes</button>
+                <button id="autoFillNo" class="btn-prompt-no">❌ No</button>
+            </div>
         </div>
-        <div id="scenariosList" class="scenarios-list">
-          <p class="autofill-empty">Extract a form first, then click <strong>Auto Fill</strong> to generate test data.</p>
+
+        <div id="scopeBanner" class="scope-banner hidden">
+            <span class="scope-icon">🎯</span>
+            <span id="scopeText">Selected: &lt;div&gt;#container</span>
+            <button id="clearScopeBtn" class="btn-clear-scope">✕ Clear</button>
         </div>
-      </div>
+
+        <div id="discoveryProgress" class="discovery-progress hidden">
+            <div class="discovery-progress-text">
+                <span class="spinner">🔄</span>
+                <span id="discoveryText">Discovering hidden elements...</span>
+            </div>
+            <div class="discovery-bar">
+                <div id="discoveryBarFill" class="discovery-bar-fill"></div>
+            </div>
+        </div>
+
+        <div id="cacheInfo" class="cache-info hidden">
+            <span class="cache-icon">💾</span>
+            <span id="cacheText">Using cached data</span>
+            <button id="refreshBtn" class="btn-refresh">🔄 Refresh</button>
+        </div>
+
+        <div id="statusBar" class="status-bar hidden">
+            <span id="statusText"></span>
+        </div>
+
+        <div class="naming-section">
+            <label for="customName">Export Name:</label>
+            <input type="text" id="customName" placeholder="Enter custom name (optional)">
+            <button id="saveNameBtn" class="btn-save">💾 Save</button>
+        </div>
+
+        <div class="tabs">
+            <button class="tab-btn active" data-tab="overview">Overview</button>
+            <button class="tab-btn" data-tab="elements">Elements</button>
+            <button class="tab-btn" data-tab="dependencies">Dependencies</button>
+            <button class="tab-btn" data-tab="autofill">Auto Fill</button>
+        </div>
+
+        <div class="tab-content">
+            <!-- Overview Tab -->
+            <div id="overview" class="tab-panel active">
+                <div id="summaryStats" class="stats-grid">
+                    <div class="stat-card">
+                        <div class="stat-value" id="totalForms">0</div>
+                        <div class="stat-label">Forms</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-value" id="totalElements">0</div>
+                        <div class="stat-label">Elements</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-value" id="totalDependencies">0</div>
+                        <div class="stat-label">Dependencies</div>
+                    </div>
+                    <div class="stat-card stat-card-hidden">
+                        <div class="stat-value" id="totalHidden">0</div>
+                        <div class="stat-label">Hidden Found</div>
+                    </div>
+                </div>
+                <div id="formsList" class="forms-list"></div>
+            </div>
+
+            <!-- Elements Tab -->
+            <div id="elements" class="tab-panel">
+                <div class="search-box">
+                    <input type="text" id="searchInput" placeholder="Search elements...">
+                </div>
+                <div id="elementsList" class="elements-list"></div>
+            </div>
+
+            <!-- Dependencies Tab -->
+            <div id="dependencies" class="tab-panel">
+                <div id="dependenciesList" class="dependencies-list"></div>
+            </div>
+
+            <!-- Auto Fill Tab -->
+            <div id="autofill" class="tab-panel">
+                <div class="autofill-toolbar">
+                    <button id="addScenarioBtn" class="btn-af btn-af-add">➕ Add Scenario</button>
+                    <button id="regenAllBtn" class="btn-af btn-af-regen">🎲 Regenerate All</button>
+                    <button id="runAllBtn" class="btn-af btn-af-run">▶️ Run All</button>
+                </div>
+                <div id="scenariosList" class="scenarios-list">
+                    <p class="autofill-empty">Extract a form first, then click <strong>Auto Fill</strong> to generate
+                        test data.</p>
+                </div>
+            </div>
+        </div>
+
+        <div id="emptyState" class="empty-state">
+            <div class="empty-icon">📋</div>
+            <p>Click "Extract Forms" to analyze the current page</p>
+        </div>
     </div>
 
-    <div id="emptyState" class="empty-state">
-      <div class="empty-icon">📋</div>
-      <p>Click "Extract Forms" to analyze the current page</p>
-    </div>
-  </div>
-
-  <script src="random-data-generator.js"></script>
-  <script src="demo-json-generator.js"></script>
-  <script src="popup-data-processor.js"></script>
-  <script src="popup.js"></script>
+    <script src="random-data-generator.js"></script>
+    <script src="demo-json-generator.js"></script>
+    <script src="popup-data-processor.js"></script>
+    <script src="popup.js"></script>
 </body>
 
 </html>

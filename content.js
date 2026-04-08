@@ -249,15 +249,27 @@
             script.remove();
         }
 
+        // Returns true if el is a real form field, not a table action button (which are false positives)
+        function isRealFormField(el) {
+            if (el.tagName === 'BUTTON') {
+                // Buttons inside table cells are action buttons (Edit/Delete/Cancel), not conditional fields
+                if (el.closest('td, th')) return false;
+                // Buttons styled as danger/warning/info/secondary are action buttons
+                const cls = el.className || '';
+                if (/btn-(danger|warning|info|secondary|outline|link|dark)/.test(cls)) return false;
+            }
+            return true;
+        }
+
         // Snapshot form element IDs in the DOM (to detect AJAX-injected elements)
         function snapshotFormElements(root) {
             const set = new Set();
             root.querySelectorAll('input, select, textarea, button').forEach(el => {
-                set.add(getElementIdentifier(el));
+                if (isRealFormField(el)) set.add(getElementIdentifier(el));
             });
             // Also snapshot from document in case AJAX injects outside the container
             document.querySelectorAll('input, select, textarea, button').forEach(el => {
-                set.add(getElementIdentifier(el));
+                if (isRealFormField(el)) set.add(getElementIdentifier(el));
             });
             return set;
         }
@@ -291,7 +303,7 @@
             afterFormEls.forEach(sel => {
                 if (!beforeFormEls.has(sel)) {
                     const el = root.querySelector(sel) || document.querySelector(sel);
-                    if (el && isElementVisible(el)) {
+                    if (el && isElementVisible(el) && isRealFormField(el)) {
                         changes.push({ targetSelector: sel, changeType: 'new', description: 'New element appeared in DOM' });
                     }
                 }
@@ -343,6 +355,11 @@
         }
 
         // ---- DISCOVER VIA RADIO CYCLING ----
+        // Re-snapshot AFTER select cycling completes so we have a clean baseline
+        // (select cycling resets each select, but residual DOM changes can pollute initialSnapshot)
+        const radioBaseSnapshot = snapshotElementStates(container);
+        const radioBaseFormEls = snapshotFormElements(container);
+
         const radioGroups = getRadioGroups(container);
         for (const group of radioGroups) {
             const triggerId = `input[name="${group.name}"]`;
@@ -351,15 +368,21 @@
 
             const originalChecked = group.radios.find(r => r.checked);
 
+            // Try EVERY radio option (not just the unchecked ones).
+            // E.g. "More than 1 day" may already be the default but we still need to
+            // test the OTHER options first so we can detect what EACH one reveals.
             for (const radio of group.radios) {
-                if (radio === originalChecked || radio.disabled) continue;
+                if (radio.disabled) continue;
 
-                radio.click(); // Use click() — triggers all handlers
+                // Take a fresh "before" snapshot each time before clicking a new radio
+                const beforeRadio = snapshotElementStates(container);
+                const beforeRadioFormEls = snapshotFormElements(container);
+
+                radio.click();
                 firePageEvent(radio, 'change');
+                await waitForDOMSettle(600);
 
-                await waitForDOMSettle(500);
-
-                const changes = fullDiff(initialSnapshot, initialFormEls, container);
+                const changes = fullDiff(beforeRadio, beforeRadioFormEls, container);
                 if (changes.length > 0) {
                     discoveries.push({
                         trigger: triggerId, triggerType: 'radio', triggerTagName: 'input[type="radio"]',
@@ -369,14 +392,14 @@
                 }
             }
 
-            // Reset
+            // Reset to original
             if (originalChecked) {
                 originalChecked.click();
                 firePageEvent(originalChecked, 'change');
             } else {
                 group.radios.forEach(r => { r.checked = false; });
             }
-            await waitForDOMSettle(300);
+            await waitForDOMSettle(400);
         }
 
         // ---- DISCOVER VIA CHECKBOX TOGGLING ----
@@ -387,11 +410,15 @@
             if (processedTriggers.has(triggerId)) continue;
             processedTriggers.add(triggerId);
 
-            cb.click(); // Toggle using click() — most reliable
+            // Fresh snapshot before each checkbox toggle for clean baseline
+            const beforeCb = snapshotElementStates(container);
+            const beforeCbFormEls = snapshotFormElements(container);
+
+            cb.click();
             firePageEvent(cb, 'change');
             await waitForDOMSettle(500);
 
-            const changes = fullDiff(initialSnapshot, initialFormEls, container);
+            const changes = fullDiff(beforeCb, beforeCbFormEls, container);
             if (changes.length > 0) {
                 discoveries.push({
                     trigger: triggerId, triggerType: 'checkbox', triggerTagName: 'input[type="checkbox"]',
@@ -1312,7 +1339,6 @@
                         }
                     }
                 }
-
                 sendResponse({ success: true, results: results });
             })();
             return true; // async response
@@ -1332,7 +1358,447 @@
             });
             return true;
         }
+
+        if (request.action === 'smartFillForm') {
+            const scopeSelector = request.scope || null;
+            smartFillAllFields(scopeSelector).then(result => {
+                sendResponse({ success: true, data: result });
+            }).catch(error => {
+                console.error('Form Extractor SmartFill Error:', error);
+                sendResponse({ success: false, error: error.message });
+            });
+            return true;
+        }
     });
+
+    // ============================
+    // SMART FILL — fills all fields iteratively including hidden ones
+    // ============================
+
+    async function smartFillAllFields(scopeSelector) {
+        const MAX_ROUNDS = 5;
+        const container = scopeSelector ? document.querySelector(scopeSelector) : document.body;
+        if (!container) throw new Error('Scope container not found: ' + scopeSelector);
+
+        const allFilledFields = [];   // accumulates every fill result across rounds
+        const filledSelectors = new Set(); // tracks already-filled elements to avoid re-filling
+
+        // Helper: fire change/input events through native + jQuery/Angular page world
+        function fireChangeEvent(target) {
+            const marker = '__fe_sf_' + Date.now() + '_' + Math.random().toString(36).slice(2);
+            target.setAttribute('data-fe-marker', marker);
+            target.dispatchEvent(new Event('input', { bubbles: true }));
+            target.dispatchEvent(new Event('change', { bubbles: true }));
+            const script = document.createElement('script');
+            script.textContent = `(function(){
+                var el=document.querySelector('[data-fe-marker="${marker}"]');
+                if(!el)return;
+                el.removeAttribute('data-fe-marker');
+                if(window.jQuery){window.jQuery(el).trigger('change');window.jQuery(el).trigger('input');}
+                else if(window.$){try{window.$(el).trigger('change');}catch(e){}}
+                if(window.angular){var s=window.angular.element(el).scope();if(s){try{s.$apply();}catch(e){}}}
+                if(window.React||window.__REACT_DEVTOOLS_GLOBAL_HOOK__){
+                    var nativeInputValueSetter=Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype,'value');
+                    // already set by content script, just re-fire
+                }
+            })();`;
+            document.documentElement.appendChild(script);
+            script.remove();
+        }
+
+        // Helper: get unique selector for an element (for dedup)
+        function elKey(el) {
+            if (el.id) return '#' + el.id;
+            if (el.name) return el.tagName.toLowerCase() + '[name="' + el.name + '"]';
+            return generateUniqueSelector(el);
+        }
+
+        // Helper: pick first non-empty, non-disabled option from a select
+        function pickSelectOption(sel) {
+            const opts = Array.from(sel.options).filter(o => o.value && !o.disabled && o.value !== '');
+            return opts.length > 0 ? opts[0] : null;
+        }
+
+        // Helper: fill a React Select / custom combobox ([role="combobox"] or class*=select)
+        async function fillReactSelect(el, roundIdx, triggeredBy) {
+            // Find the control wrapper
+            let control = el;
+            const container = el.closest('[class*="select"],[class*="Select"],[data-testid]') || el.parentElement;
+
+            // Find the clickable control (not the hidden input)
+            const clickTarget = container ? (
+                container.querySelector('[class*="control"],[class*="Control"]') ||
+                container.querySelector('[role="combobox"]') ||
+                el
+            ) : el;
+
+            clickTarget.focus();
+            clickTarget.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }));
+            clickTarget.click();
+            await waitForDOMSettle(400);
+
+            // Find the open menu and pick first option
+            const menuSelectors = [
+                '[role="listbox"]', '[role="option"]',
+                '.react-select__menu', '.react-select__option',
+                '[class*="menu"]', '[class*="Menu"]',
+                '[class*="option"]:not([aria-disabled="true"])'
+            ];
+
+            let chosen = null;
+            for (const sel of menuSelectors) {
+                const items = document.querySelectorAll(sel);
+                for (const item of items) {
+                    if (item.offsetParent !== null && item.getAttribute('aria-disabled') !== 'true' && !item.classList.contains('disabled')) {
+                        // Skip placeholder-like first items
+                        const txt = item.textContent.trim();
+                        if (txt && txt.length > 0) {
+                            chosen = item;
+                            break;
+                        }
+                    }
+                }
+                if (chosen) break;
+            }
+
+            if (chosen) {
+                const displayValue = chosen.textContent.trim();
+                chosen.click();
+                await waitForDOMSettle(300);
+                return { value: displayValue, displayValue, status: 'filled' };
+            }
+
+            // Close menu if nothing found
+            document.body.click();
+            await waitForDOMSettle(200);
+            return { value: '', displayValue: '', status: 'not-found' };
+        }
+
+        // Helper: generate a random value for an element using the same logic as RandomDataGenerator
+        function generateValue(el) {
+            const type = (el.type || el.tagName || 'text').toLowerCase();
+            const hints = [el.id || '', el.name || '', el.placeholder || '',
+                           (document.querySelector(`label[for="${el.id}"]`) || {}).textContent || '',
+                           el.getAttribute('aria-label') || ''].join(' ').toLowerCase();
+
+            // Date types
+            if (type === 'date') {
+                const y = 1990 + Math.floor(Math.random() * 20);
+                const m = String(Math.floor(Math.random() * 12) + 1).padStart(2, '0');
+                const d = String(Math.floor(Math.random() * 28) + 1).padStart(2, '0');
+                return `${y}-${m}-${d}`;
+            }
+            if (type === 'datetime-local') {
+                const y = 1990 + Math.floor(Math.random() * 20);
+                const m = String(Math.floor(Math.random() * 12) + 1).padStart(2, '0');
+                const d = String(Math.floor(Math.random() * 28) + 1).padStart(2, '0');
+                const h = String(Math.floor(Math.random() * 24)).padStart(2, '0');
+                const mi = String(Math.floor(Math.random() * 60)).padStart(2, '0');
+                return `${y}-${m}-${d}T${h}:${mi}`;
+            }
+            if (type === 'time') {
+                const h = String(Math.floor(Math.random() * 24)).padStart(2, '0');
+                const mi = String(Math.floor(Math.random() * 60)).padStart(2, '0');
+                return `${h}:${mi}`;
+            }
+            if (type === 'month') {
+                const y = 2000 + Math.floor(Math.random() * 25);
+                const m = String(Math.floor(Math.random() * 12) + 1).padStart(2, '0');
+                return `${y}-${m}`;
+            }
+            if (type === 'week') {
+                const y = 2020 + Math.floor(Math.random() * 5);
+                const w = String(Math.floor(Math.random() * 52) + 1).padStart(2, '0');
+                return `${y}-W${w}`;
+            }
+            if (type === 'number' || type === 'range') {
+                const min = parseFloat(el.min) || 0;
+                const max = parseFloat(el.max) || 100;
+                const step = parseFloat(el.step) || 1;
+                const steps = Math.floor((max - min) / step);
+                return String(min + Math.floor(Math.random() * (steps + 1)) * step);
+            }
+            if (type === 'color') {
+                return '#' + Math.floor(Math.random() * 16777215).toString(16).padStart(6, '0');
+            }
+            if (type === 'email') return `testuser${Math.floor(Math.random()*999)}@example.com`;
+            if (type === 'tel' || type === 'phone') return `+1-${Math.floor(Math.random()*800+200)}-${Math.floor(Math.random()*800+200)}-${Math.floor(Math.random()*9000+1000)}`;
+            if (type === 'url') return `https://www.example.com/test${Math.floor(Math.random()*999)}`;
+            if (type === 'password') return `TestPass@${Math.floor(Math.random()*9999)}!`;
+            if (type === 'textarea') return 'This is test data entered by Form Extractor smart fill. Lorem ipsum dolor sit amet.';
+
+            // Text semantic detection
+            if (/\b(first.?name|fname|given)\b/.test(hints)) return ['James','Mary','John','Patricia','Robert'][Math.floor(Math.random()*5)];
+            if (/\b(last.?name|lname|surname)\b/.test(hints)) return ['Smith','Johnson','Williams','Brown','Jones'][Math.floor(Math.random()*5)];
+            if (/\b(full.?name|your.?name)\b/.test(hints)) return ['James Smith','Mary Johnson','John Williams'][Math.floor(Math.random()*3)];
+            if (/\be.?mail\b/.test(hints)) return `test${Math.floor(Math.random()*999)}@example.com`;
+            if (/\b(phone|mobile|tel|cell)\b/.test(hints)) return `+1-555-${Math.floor(Math.random()*800+100)}-${Math.floor(Math.random()*9000+1000)}`;
+            if (/\b(address|street)\b/.test(hints)) return `${Math.floor(Math.random()*9000+100)} Main Street`;
+            if (/\b(city|town)\b/.test(hints)) return ['New York','Chicago','Houston','Phoenix'][Math.floor(Math.random()*4)];
+            if (/\b(state|province)\b/.test(hints)) return ['California','Texas','Florida','New York'][Math.floor(Math.random()*4)];
+            if (/\b(country|nation)\b/.test(hints)) return 'United States';
+            if (/\b(zip|postal)\b/.test(hints)) return String(Math.floor(Math.random()*90000+10000));
+            if (/\b(company|org)\b/.test(hints)) return 'Test Company Inc';
+            if (/\b(password|passwd|pwd)\b/.test(hints)) return `TestPass@${Math.floor(Math.random()*9999)}!`;
+            if (/\b(message|comment|description|note|feedback|bio)\b/.test(hints)) return 'This is a test message entered by the Form Extractor.';
+            if (/\bname\b/.test(hints)) return ['Alice','Bob','Charlie','Diana'][Math.floor(Math.random()*4)];
+            if (/\bage\b/.test(hints)) return String(Math.floor(Math.random()*50)+18);
+            if (/\bsearch\b/.test(hints)) return 'test query';
+
+            // Fallback: random word
+            const chars = 'abcdefghijklmnopqrstuvwxyz';
+            const len = 5 + Math.floor(Math.random()*7);
+            let w = '';
+            for (let i = 0; i < len; i++) w += chars[Math.floor(Math.random()*chars.length)];
+            return w;
+        }
+
+        // Core: fill a single element, return a result record
+        async function fillElement(el, roundIdx, triggeredBy) {
+            const key = elKey(el);
+            if (filledSelectors.has(key)) return null; // already filled
+
+            const tagName = el.tagName.toUpperCase();
+            const elType = (el.type || '').toLowerCase();
+
+            // Skip non-interactive types
+            if (['hidden','file','submit','reset','button','image'].includes(elType)) return null;
+            if (tagName === 'BUTTON') return null;
+            if (el.disabled || el.readOnly) return null;
+
+            const label = findLabel(el) || el.getAttribute('aria-label') || el.placeholder || el.name || el.id || '';
+            const selector = el.id ? `#${el.id}` : (el.name ? `[name="${el.name}"]` : generateUniqueSelector(el));
+
+            const record = {
+                label,
+                type: elType || tagName.toLowerCase(),
+                id: el.id || '',
+                name: el.name || '',
+                selector,
+                xpath: XPathGenerator ? XPathGenerator.generate(el) : '',
+                value: '',
+                displayValue: '',
+                status: 'error',
+                round: roundIdx + 1,
+                triggeredBy: triggeredBy || null
+            };
+
+            try {
+                // ---- SELECT (native) ----
+                if (tagName === 'SELECT') {
+                    const opt = pickSelectOption(el);
+                    if (opt) {
+                        el.focus();
+                        const nativeSetter = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value')?.set;
+                        if (nativeSetter) nativeSetter.call(el, opt.value);
+                        else el.value = opt.value;
+                        el.selectedIndex = opt.index;
+                        fireChangeEvent(el);
+                        el.blur();
+                        await waitForDOMSettle(400);
+                        record.value = opt.value;
+                        record.displayValue = opt.text;
+                        record.status = 'filled';
+                        filledSelectors.add(key);
+                    } else {
+                        record.status = 'no-options';
+                    }
+                    return record;
+                }
+
+                // ---- RADIO ----
+                if (elType === 'radio') {
+                    const groupSel = el.name ? `input[type="radio"][name="${el.name}"]` : null;
+                    if (filledSelectors.has('radio-group::' + (el.name || key))) return null; // group already handled
+                    filledSelectors.add('radio-group::' + (el.name || key));
+
+                    const searchRoot = container !== document.body ? container : document;
+                    const radios = groupSel
+                        ? Array.from(searchRoot.querySelectorAll(groupSel))
+                        : [el];
+                    const enabled = radios.filter(r => !r.disabled);
+
+                    if (enabled.length === 0) return record;
+
+                    // Probe each radio to find which one reveals the most new fields.
+                    // Snapshot visible fields BEFORE probing so we can detect newly revealed ones.
+                    const beforeProbeSnapshot = snapshotVisible(container);
+                    let bestRadio = enabled[enabled.length - 1]; // default: last option (usually most complex)
+                    let bestRevealCount = -1;
+
+                    for (const radio of enabled) {
+                        radio.click();
+                        radio.checked = true;
+                        fireChangeEvent(radio);
+                        await waitForDOMSettle(500);
+
+                        const afterSnapshot = snapshotVisible(container);
+                        const newlyVisible = [...afterSnapshot].filter(k => !beforeProbeSnapshot.has(k));
+
+                        if (newlyVisible.length > bestRevealCount) {
+                            bestRevealCount = newlyVisible.length;
+                            bestRadio = radio;
+                        }
+
+                        // Stop probing once we found a radio that reveals fields
+                        if (newlyVisible.length > 0) break;
+                    }
+
+                    // Make sure the winning radio is selected (may already be if we stopped early)
+                    if (!bestRadio.checked) {
+                        bestRadio.click();
+                        bestRadio.checked = true;
+                        fireChangeEvent(bestRadio);
+                        await waitForDOMSettle(500);
+                    }
+
+                    record.value = bestRadio.value;
+                    record.displayValue = findLabel(bestRadio) || bestRadio.value;
+                    record.status = 'filled';
+                    filledSelectors.add(key);
+                    return record;
+                }
+
+                // ---- CHECKBOX ----
+                if (elType === 'checkbox') {
+                    if (!el.checked) {
+                        el.click();
+                        await waitForDOMSettle(200);
+                    }
+                    record.value = 'true';
+                    record.displayValue = 'Checked';
+                    record.status = 'filled';
+                    filledSelectors.add(key);
+                    return record;
+                }
+
+                // ---- REACT SELECT / custom combobox ----
+                // Detect by role="combobox" or aria-haspopup="listbox" or class containing "select"
+                const isReactSelect = (
+                    el.getAttribute('role') === 'combobox' ||
+                    el.getAttribute('aria-haspopup') === 'listbox' ||
+                    (el.id && (el.id.toLowerCase().includes('react-select') || el.id.toLowerCase().includes('-input'))) ||
+                    (el.closest('[class*="select__"],[class*="Select__"]') !== null)
+                );
+                if (isReactSelect && !el.disabled) {
+                    const res = await fillReactSelect(el, roundIdx, triggeredBy);
+                    record.value = res.value;
+                    record.displayValue = res.displayValue;
+                    record.status = res.status;
+                    filledSelectors.add(key);
+                    return record;
+                }
+
+                // ---- TEXT / TEXTAREA / DATE / NUMBER / COLOR / etc. ----
+                if (['input','textarea'].includes(tagName.toLowerCase()) ||
+                    ['text','email','tel','url','password','number','range','date','datetime-local',
+                     'time','month','week','color','search','textarea'].includes(elType)) {
+                    const val = generateValue(el);
+                    const proto = tagName === 'TEXTAREA' ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
+                    const nativeSetter = Object.getOwnPropertyDescriptor(proto, 'value')?.set;
+                    if (nativeSetter) nativeSetter.call(el, val);
+                    else el.value = val;
+                    el.focus();
+                    fireChangeEvent(el);
+                    el.dispatchEvent(new Event('blur', { bubbles: true }));
+                    record.value = val;
+                    record.displayValue = val;
+                    record.status = 'filled';
+                    filledSelectors.add(key);
+                    return record;
+                }
+
+            } catch (err) {
+                record.status = 'error';
+                record.error = err.message;
+            }
+
+            return record;
+        }
+
+        // Get all currently visible + enabled form fields in container
+        function getVisibleFields(root) {
+            const candidates = root.querySelectorAll(
+                'input:not([type="hidden"]):not([type="submit"]):not([type="reset"]):not([type="image"]):not([type="button"]),' +
+                'select, textarea, [role="combobox"][aria-haspopup="listbox"]'
+            );
+            return Array.from(candidates).filter(el => {
+                if (el.disabled) return false;
+                // Must be visible
+                const style = window.getComputedStyle(el);
+                if (style.display === 'none' || style.visibility === 'hidden' || style.opacity === '0') return false;
+                if (el.offsetParent === null && style.position !== 'fixed') return false;
+                return true;
+            });
+        }
+
+        // Snapshot visible element keys
+        function snapshotVisible(root) {
+            return new Set(getVisibleFields(root).map(elKey));
+        }
+
+        // ---- MAIN LOOP ----
+        let round = 0;
+        let prevSnapshot = new Set();
+
+        while (round < MAX_ROUNDS) {
+            const currentSnapshot = snapshotVisible(container);
+
+            // Find fields not yet filled
+            const pending = getVisibleFields(container).filter(el => {
+                const key = elKey(el);
+                // Radio groups: check group key
+                if ((el.type || '').toLowerCase() === 'radio' && el.name) {
+                    return !filledSelectors.has('radio-group::' + el.name);
+                }
+                return !filledSelectors.has(key);
+            });
+
+            if (pending.length === 0) break;
+
+            console.log(`Form Extractor SmartFill: Round ${round + 1}, ${pending.length} pending fields`);
+
+            for (const el of pending) {
+                // Determine triggeredBy: was this element newly visible since last round?
+                const key = elKey(el);
+                const isNew = round > 0 && !prevSnapshot.has(key);
+                const result = await fillElement(el, round, isNew ? 'appeared-in-round-' + round : null);
+                if (result) {
+                    allFilledFields.push(result);
+                    // Wait a bit longer after selects/radios to let dependent fields reveal
+                    if (['select', 'radio', 'checkbox'].includes(result.type)) {
+                        await waitForDOMSettle(600);
+                    }
+                }
+            }
+
+            prevSnapshot = currentSnapshot;
+            round++;
+
+            // Wait for any AJAX/DOM reactions before next round
+            await waitForDOMSettle(800);
+
+            // Check if new fields appeared
+            const nextSnapshot = snapshotVisible(container);
+            const newKeys = [...nextSnapshot].filter(k => !currentSnapshot.has(k));
+            if (newKeys.length === 0 && pending.every(el => filledSelectors.has(elKey(el)) || filledSelectors.has('radio-group::' + (el.name || '')))) {
+                break; // nothing new appeared and everything is filled
+            }
+        }
+
+        const filledCount = allFilledFields.filter(f => f.status === 'filled').length;
+        const hiddenCount = allFilledFields.filter(f => f.triggeredBy && f.triggeredBy !== null && f.triggeredBy.startsWith('appeared')).length;
+
+        console.log(`Form Extractor SmartFill: Done. ${filledCount} fields filled in ${round} round(s), ${hiddenCount} were hidden/triggered.`);
+
+        return {
+            smartFillAt: new Date().toISOString(),
+            rounds: round,
+            totalFieldsFilled: filledCount,
+            hiddenFieldsFilled: hiddenCount,
+            fields: allFilledFields
+        };
+    }
 
     console.log('Form Extractor: Content script loaded (v2 with picker + hidden discovery)');
 })();

@@ -1,0 +1,26 @@
+{
+  "name": "form-extractor",
+  "version": "1.0.0",
+  "description": "A powerful Chrome extension that extracts comprehensive form data from any webpage for Selenium automation testing.",
+  "main": "background.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/xASHx26/form_data_extractor.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/xASHx26/form_data_extractor/issues"
+  },
+  "homepage": "https://github.com/xASHx26/form_data_extractor#readme",
+  "devDependencies": {
+    "@tailwindcss/container-queries": "^0.1.1",
+    "@tailwindcss/forms": "^0.5.11",
+    "tailwindcss": "^4.2.2"
+  }
+}
